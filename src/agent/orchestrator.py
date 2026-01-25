@@ -155,16 +155,26 @@ class AgentOrchestrator:
             actions = [a.statement for a in (j0_result.actions_found if j0_result else [])]
             
             j2_data = self.llm.generate_thesis_and_competing(input_text, context, actions)
-            # Ensure numeric fields are proper floats
-            j2_data['thesis_confidence'] = float(j2_data.get('thesis_confidence', 0.5))
-            j2_data['competing_confidence'] = float(j2_data.get('competing_confidence', 0.5))
+            
+            # Clamp confidence values to fix the 700% (7.0) bug
+            j2_data['thesis_confidence'] = max(0.0, min(1.0, float(j2_data.get('thesis_confidence', 0.5))))
+            j2_data['competing_confidence'] = max(0.0, min(1.0, float(j2_data.get('competing_confidence', 0.5))))
+            
             j2_data.setdefault('thesis_evidence', [])
             j2_data.setdefault('competing_evidence', [])
             j2_data.setdefault('competing_thesis', '')
             j2_data.setdefault('why_main_over_competing', '')
+            j2_data.setdefault('strategic_context', 'No strategic context provided.')
+            j2_data.setdefault('causal_reasoning', 'No causal reasoning provided.')
+            
             j2_result = Judgment2(**j2_data)
             
-            red_team = devils_advocate.challenge(j2_result.main_thesis, j2_result.thesis_evidence, 1)
+            red_team = devils_advocate.challenge(
+                j2_result.main_thesis, 
+                j2_result.thesis_evidence, 
+                1
+            )
+            # Re-clamp after red team adjustment
             j2_result.thesis_confidence = max(0.1, min(0.95, j2_result.thesis_confidence + red_team.confidence_adjustment))
             
             j3_data = self.llm.generate_falsifiable_condition(j2_result.main_thesis, context)
@@ -192,6 +202,8 @@ class AgentOrchestrator:
             judgment_0=j0_result.result if j0_result else "UNKNOWN",
             judgment_1=j1_result.result if j1_result else "UNKNOWN",
             judgment_reasoning=j1_result.reasoning if j1_result else "Analysis incomplete",
+            strategic_context=j2_result.strategic_context if j2_result else None,
+            causal_reasoning=j2_result.causal_reasoning if j2_result else None,
             main_thesis=j2_result.main_thesis if j2_result else None,
             thesis_confidence=j2_result.thesis_confidence if j2_result else 0.0,
             thesis_evidence=j2_result.thesis_evidence if j2_result else [],

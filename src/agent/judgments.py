@@ -47,6 +47,10 @@ class Judgment2:
     thesis_evidence: list[str]
     thesis_confidence: float
     
+    # NEW: Strategic Context & Causal Reasoning
+    strategic_context: str
+    causal_reasoning: str
+    
     competing_thesis: str
     competing_evidence: list[str]
     competing_confidence: float

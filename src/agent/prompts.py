@@ -70,27 +70,32 @@ OUTPUT (JSON):
 
 
 # Judgment 2: Thesis generation with competing explanation
-JUDGMENT_2_PROMPT = """Generate the main thesis AND a competing explanation.
+JUDGMENT_2_PROMPT = """You are a Senior Strategic Analyst. Generate a deep-dive thesis AND a competing explanation.
 
 STATEMENT: "{tweet}"
-ACTIONS: {actions}
-CONTEXT: {context}
+ACTIONS RECORDED: {actions}
+SEARCH CONTEXT: {context}
+
+YOUR GOAL: Break this down for someone who doesn't understand US politics. Explain the "Who", the "Why", and the "So What".
 
 RULES:
-1. Main thesis = most likely interpretation
-2. Competing thesis = plausible alternative
-3. You MUST provide BOTH
-4. Confidence 0.0-1.0 based on evidence strength
+1. **Strategic Context**: Explain WHO the key players are and their HISTORICAL background/roles. Don't assume the user knows them.
+2. **Causal Reasoning**: Explain WHY this is happening now. What are the political stakes? What is the intended strategic outcome?
+3. **Main Thesis**: Most likely interpretation of the strategic shift.
+4. **Competing Thesis**: A plausible alternative explanation that would also fit the facts.
+5. **Confidence**: Must be a number between 0.0 and 1.0.
 
 OUTPUT (JSON):
 {{
-    "main_thesis": "...",
+    "strategic_context": "Comprehensive background on players and history...",
+    "causal_reasoning": "Deep analysis of why this is happening and the impact...",
+    "main_thesis": "The strategic signal identified...",
     "thesis_evidence": ["evidence 1", "evidence 2"],
     "thesis_confidence": 0.X,
-    "competing_thesis": "alternative interpretation",
+    "competing_thesis": "Alternative interpretation...",
     "competing_evidence": ["evidence"],
     "competing_confidence": 0.X,
-    "why_main_over_competing": "reasoning"
+    "why_main_over_competing": "Reasoning for prioritizing the main thesis"
 }}"""
 
 
@@ -143,34 +148,25 @@ OUTPUT (JSON):
 
 
 # Final narrative generation
-NARRATIVE_PROMPT = """Generate the final analysis report.
+NARRATIVE_PROMPT = """You are a Senior Strategic Advisor providing an intelligence briefing to a VIP client.
 
 STATEMENT ANALYZED: "{tweet}"
-POSTED AT: {posted_at}
+STAKEHOLDERS: {actions}
 
-JUDGMENT RESULTS:
-- Judgment 0: {j0_result} (Actions: {actions})
-- Judgment 1: {j1_result}
+KEY INPUTS:
+- Strategic Context: {strategic_context}
+- Causal Reasoning: {causal_reasoning}
 - Main Thesis: {main_thesis} (Confidence: {thesis_confidence})
 - Competing Thesis: {competing_thesis}
+- Red Team Review: {challenges}
 
-RED TEAM CHALLENGES:
-{challenges}
+TASK: Write a sophisticated, deep-dive intelligence brief.
+1. **The Lead**: Summarize the event and its immediate strategic meaning.
+2. **The Deep Dive**: Use the Strategic Context and Causal Reasoning to explain the "inner workings" of this event. Why does it matter to the bigger picture?
+3. **The Counter-Perspective**: Present the competing thesis and why it's worth considering.
+4. **Risk Assessment**: What should the client watch for next? Mention the Falsifiable Condition.
 
-FALSIFIABLE CONDITION:
-{falsifiable_condition}
-Deadline: {deadline}
-
-CONTEXT USED:
-{context}
-
-WRITE A CONCISE INTELLIGENCE BRIEF (3-5 paragraphs):
-1. What happened and what it means (main interpretation)
-2. Alternative interpretation (competing thesis)
-3. Key uncertainties and what to watch
-4. The specific prediction to track
-
-TONE: Intelligence analyst, not pundit. Facts first, speculation labeled.
+TONE: Professional, authoritative, yet explanatory. Break down complex jargon. Use clear logic.
 
 OUTPUT:"""
 

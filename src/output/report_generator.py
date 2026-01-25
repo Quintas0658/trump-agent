@@ -45,6 +45,10 @@ class DailyBriefing:
     judgment_1: str = "UNKNOWN"
     judgment_reasoning: str = ""
     
+    # NEW: Strategic Context & Causal Reasoning
+    strategic_context: Optional[str] = None  # Who/What/Where background
+    causal_reasoning: Optional[str] = None   # Why/How implications
+    
     # Main thesis (if J1 = YES or UNCERTAIN)
     main_thesis: Optional[str] = None
     thesis_confidence: float = 0.0
@@ -95,6 +99,14 @@ class ReportGenerator:
 |------|--------|---------|
 | **J0**: Real-world action? | {j0} | {j0_meaning} |
 | **J1**: Clear thesis today? | {j1} | {j1_meaning} |
+
+---
+
+## 🏛️ Strategic Context
+{strategic_context}
+
+## ⛓️ Causal Reasoning
+{causal_reasoning}
 
 ---
 
@@ -168,6 +180,8 @@ class ReportGenerator:
             j0_meaning=j0_meaning,
             j1=briefing.judgment_1,
             j1_meaning=j1_meaning,
+            strategic_context=briefing.strategic_context or "No strategic context provided.",
+            causal_reasoning=briefing.causal_reasoning or "No causal reasoning provided.",
             main_content=main_content,
             red_team_section=red_team_section,
             search_count=briefing.search_count,
@@ -253,6 +267,8 @@ class ReportGenerator:
         
         if briefing.main_thesis:
             output["thesis"] = {
+                "strategic_context": briefing.strategic_context,
+                "causal_reasoning": briefing.causal_reasoning,
                 "main": {
                     "statement": briefing.main_thesis,
                     "confidence": briefing.thesis_confidence,

@@ -144,6 +144,29 @@ class AgentOrchestrator:
         briefing = await self._generate_final_report(combined_claims, all_search_results, j0_result, j1_result, state)
         return briefing
 
+    def _parse_confidence(self, val: Any) -> float:
+        """Robustly parse confidence value from LLM (handles 0.9, '0.9', 'High', etc.)."""
+        if isinstance(val, (int, float)):
+            return max(0.0, min(1.0, float(val)))
+        
+        if isinstance(val, str):
+            val_clean = val.strip().lower()
+            # Handle semantic strings
+            if "high" in val_clean: return 0.9
+            if "medium" in val_clean: return 0.5
+            if "low" in val_clean: return 0.2
+            
+            # Try parsing as float
+            try:
+                # Handle cases like "0.9 (Strong evidence)"
+                numeric_part = "".join(c for c in val if c.isdigit() or c == ".")
+                if numeric_part:
+                    return max(0.0, min(1.0, float(numeric_part)))
+            except ValueError:
+                pass
+        
+        return 0.5 # Default fallback
+
     async def _generate_final_report(self, input_text, search_results, j0_result, j1_result, state) -> DailyBriefing:
         """Internal helper to generate the final report from aggregated research."""
         j2_result = None
@@ -156,9 +179,9 @@ class AgentOrchestrator:
             
             j2_data = self.llm.generate_thesis_and_competing(input_text, context, actions)
             
-            # Clamp confidence values to fix the 700% (7.0) bug
-            j2_data['thesis_confidence'] = max(0.0, min(1.0, float(j2_data.get('thesis_confidence', 0.5))))
-            j2_data['competing_confidence'] = max(0.0, min(1.0, float(j2_data.get('competing_confidence', 0.5))))
+            # Robustly parse confidence values to fix the 700% (7.0) and "High" string bugs
+            j2_data['thesis_confidence'] = self._parse_confidence(j2_data.get('thesis_confidence'))
+            j2_data['competing_confidence'] = self._parse_confidence(j2_data.get('competing_confidence'))
             
             j2_data.setdefault('thesis_evidence', [])
             j2_data.setdefault('competing_evidence', [])

@@ -48,9 +48,12 @@ class TruthSocialScraper:
         url = f"{self.APIFY_BASE_URL}/actor-tasks/{self.TASK_ID}/run-sync-get-dataset-items"
         
         # Override input configuration
+        # Note: useLastPostId=false ensures we always get fresh posts (not incremental)
         run_input = {
             "username": username,
             "maxPosts": max_posts,
+            "useLastPostId": False,  # Always fetch fresh, let our app handle dedup
+            "cleanContent": True,
         }
         
         # Retry logic with exponential backoff

@@ -53,21 +53,32 @@ class TruthSocialScraper:
             "maxPosts": max_posts,
         }
         
-        try:
-            print(f"[*] Triggering Apify sync task for {username}...")
-            response = self.client.post(
-                url,
-                params={"token": self.api_key},
-                json=run_input,
-            )
-            response.raise_for_status()
-            
-            items = response.json()
-            print(f"[*] Successfully fetched {len(items)} posts from Truth Social.")
-            return [self._parse_post(item) for item in items]
-        except httpx.HTTPError as e:
-            print(f"Failed to fetch from Apify: {e}")
-            return []
+        # Retry logic with exponential backoff
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                print(f"[*] Triggering Apify sync task for {username}... (attempt {attempt + 1}/{max_retries})")
+                response = self.client.post(
+                    url,
+                    params={"token": self.api_key},
+                    json=run_input,
+                )
+                response.raise_for_status()
+                
+                items = response.json()
+                print(f"[*] Successfully fetched {len(items)} posts from Truth Social.")
+                return [self._parse_post(item) for item in items]
+            except httpx.HTTPError as e:
+                print(f"[!] Apify attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    import time
+                    wait_time = 2 ** attempt  # 1s, 2s, 4s
+                    print(f"[*] Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                else:
+                    print(f"[!] All {max_retries} attempts failed. Returning empty list.")
+                    return []
+        return []
     
     def _parse_post(self, item: dict) -> TruthPost:
         """Parse a raw API response into a TruthPost."""

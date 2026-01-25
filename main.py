@@ -100,7 +100,15 @@ async def generate_daily_brief(username: str, mock: bool = False, include_news: 
     print(f"[*] Synthesizing {len(pending_pulses)} pulses into a Strategic Situation Report...")
     briefing = await orchestrator.analyze_batch(pending_pulses)
     
-    # 4. Output Report
+    # 4. Mark analyzed claims as PROCESSED
+    if not mock:
+        print("[*] Marking analyzed claims as PROCESSED...")
+        for claim in pending_pulses:
+            if claim.id:
+                claim_store.update_status(claim.id, "PROCESSED")
+        print(f"[*] Marked {len([c for c in pending_pulses if c.id])} claims as PROCESSED.")
+    
+    # 5. Output Report
     from src.output.report_generator import report_generator
     report_generator.print_briefing(briefing)
     return briefing

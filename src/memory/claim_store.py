@@ -86,14 +86,18 @@ class ClaimStore:
             created_at=parse_iso_datetime(row["created_at"]),
         )
 
-    def get_pending_claims(self, limit: int = 10) -> List[Claim]:
-        """Get claims that have not been processed yet."""
+    def get_pending_claims(self, limit: int = 50, hours: int = 24) -> List[Claim]:
+        """Get claims that have not been processed yet within the time window."""
         if not self.client:
             return []
+        
+        from datetime import datetime, timedelta
+        cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
             
         result = self.client.table("claims") \
             .select("*") \
             .eq("processing_status", "PENDING") \
+            .gte("created_at", cutoff) \
             .order("created_at", desc=True) \
             .limit(limit) \
             .execute()

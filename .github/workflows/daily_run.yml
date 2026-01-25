@@ -2,8 +2,8 @@ name: Daily Intelligence Cycle
 
 on:
   schedule:
-    # Run at 01:00 UTC = 09:00 Beijing Time
-    - cron: '0 1 * * *'
+    # Run every 6 hours: 01:00, 07:00, 13:00, 19:00 UTC = 09:00, 15:00, 21:00, 03:00 Beijing Time
+    - cron: '0 1,7,13,19 * * *'
   workflow_dispatch:  # Allow manual trigger
 
 jobs:

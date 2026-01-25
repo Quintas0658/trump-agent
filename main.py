@@ -98,6 +98,7 @@ async def generate_daily_brief(username: str, mock: bool = False, include_news: 
     # 4. Output Report
     from src.output.report_generator import report_generator
     report_generator.print_briefing(briefing)
+    return briefing
 
 def main():
     load_dotenv()
@@ -113,13 +114,21 @@ def main():
     parser.add_argument("--username", type=str, default="realDonaldTrump", help="Truth Social username to track")
     parser.add_argument("--daily", action="store_true", help="Generate daily brief from recent posts")
     parser.add_argument("--mock", action="store_true", help="Use mock data instead of live APIs")
+    parser.add_argument("--output-file", type=str, help="Save report to file (for GitHub Actions email)")
     
     args = parser.parse_args()
     
     if args.tweet:
         asyncio.run(analyze_single_tweet(args.tweet))
     elif args.daily:
-        asyncio.run(generate_daily_brief(args.username, args.mock))
+        briefing = asyncio.run(generate_daily_brief(args.username, args.mock))
+        
+        # Save to file if requested
+        if args.output_file and briefing:
+            markdown = report_generator.generate_markdown(briefing)
+            with open(args.output_file, 'w', encoding='utf-8') as f:
+                f.write(markdown)
+            print(f"[*] Report saved to {args.output_file}")
     else:
         parser.print_help()
 

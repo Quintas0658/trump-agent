@@ -89,7 +89,7 @@ async def generate_daily_brief(username: str, mock: bool = False, include_news: 
     
     if not pending_pulses:
         print("[!] No new pulses detected to analyze.")
-        return
+        return None
         
     # 3. Intelligent Batch Synthesis (The SitRep)
     print(f"[*] Synthesizing {len(pending_pulses)} pulses into a Strategic Situation Report...")
@@ -121,14 +121,36 @@ def main():
     if args.tweet:
         asyncio.run(analyze_single_tweet(args.tweet))
     elif args.daily:
-        briefing = asyncio.run(generate_daily_brief(args.username, args.mock))
-        
-        # Save to file if requested
-        if args.output_file and briefing:
-            markdown = report_generator.generate_markdown(briefing)
-            with open(args.output_file, 'w', encoding='utf-8') as f:
-                f.write(markdown)
-            print(f"[*] Report saved to {args.output_file}")
+        try:
+            briefing = asyncio.run(generate_daily_brief(args.username, args.mock))
+            
+            # Save to file if requested
+            if args.output_file:
+                if briefing:
+                    markdown = report_generator.generate_markdown(briefing)
+                    with open(args.output_file, 'w', encoding='utf-8') as f:
+                        f.write(markdown)
+                    print(f"[*] Report saved to {args.output_file}")
+                else:
+                    # Create a minimal report even if no briefing
+                    with open(args.output_file, 'w', encoding='utf-8') as f:
+                        f.write(f"# Daily Intelligence Brief\n\n")
+                        f.write(f"**Date**: {datetime.now().strftime('%Y-%m-%d')}\n\n")
+                        f.write("No new intelligence signals detected today.\n")
+                    print(f"[*] Empty report saved to {args.output_file}")
+        except Exception as e:
+            print(f"[!] Error generating daily brief: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Still create a report file for GitHub Actions
+            if args.output_file:
+                with open(args.output_file, 'w', encoding='utf-8') as f:
+                    f.write(f"# Daily Intelligence Brief - Error\n\n")
+                    f.write(f"**Date**: {datetime.now().strftime('%Y-%m-%d')}\n\n")
+                    f.write(f"Error during analysis: {e}\n")
+                print(f"[*] Error report saved to {args.output_file}")
+            sys.exit(1)
     else:
         parser.print_help()
 

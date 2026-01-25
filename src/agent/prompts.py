@@ -69,33 +69,34 @@ OUTPUT (JSON):
 }}"""
 
 
-# Judgment 2: Thesis generation with competing explanation
-JUDGMENT_2_PROMPT = """You are a Senior Strategic Analyst. Generate a deep-dive thesis AND a competing explanation.
+# Judgment 2: Multi-Pillar Strategic Analysis
+JUDGMENT_2_PROMPT = """You are a Senior Strategic Analyst. Your task is to identify the MULTIPLE distinct strategic themes (Intelligence Pillars) present in these signals.
 
-STATEMENT: "{tweet}"
+STATEMENT BATCH: "{tweet}"
 ACTIONS RECORDED: {actions}
 SEARCH CONTEXT: {context}
 
-YOUR GOAL: Break this down for someone who doesn't understand US politics. Explain the "Who", the "Why", and the "So What".
+YOUR GOAL: Segment these pulses into 3-5 distinct "Intelligence Pillars". For each pillar, explain the "Who", the "Why", and the "So What" for someone unfamiliar with US politics.
 
-RULES:
-1. **Strategic Context**: Explain WHO the key players are and their HISTORICAL background/roles. Don't assume the user knows them.
-2. **Causal Reasoning**: Explain WHY this is happening now. What are the political stakes? What is the intended strategic outcome?
-3. **Main Thesis**: Most likely interpretation of the strategic shift.
-4. **Competing Thesis**: A plausible alternative explanation that would also fit the facts.
-5. **Confidence**: Must be a number between 0.0 and 1.0.
+PRYING QUESTIONS FOR EACH PILLAR:
+- WHO: Who are the key players and what is their historical role?
+- WHY: Why is this happening now? What are the political stakes?
+- SO WHAT: What is the intended strategic outcome?
 
-OUTPUT (JSON):
+OUTPUT (JSON object with a list of pillars):
 {{
-    "strategic_context": "Comprehensive background on players and history...",
-    "causal_reasoning": "Deep analysis of why this is happening and the impact...",
-    "main_thesis": "The strategic signal identified...",
-    "thesis_evidence": ["evidence 1", "evidence 2"],
-    "thesis_confidence": 0.X,
-    "competing_thesis": "Alternative interpretation...",
-    "competing_evidence": ["evidence"],
-    "competing_confidence": 0.X,
-    "why_main_over_competing": "Reasoning for prioritizing the main thesis"
+    "pillars": [
+        {{
+            "title": "Short descriptive title (e.g., 'The China-Canada Trade Warning')",
+            "summary": "1-2 sentence high-level summary",
+            "strategic_context": "Deep background on players and history for this specific pillar...",
+            "causal_reasoning": "Analysis of why this is happening and the strategic intent...",
+            "confidence": 0.X (0.0-1.0),
+            "evidence": ["evidence 1", "evidence 2"],
+            "competing_explanation": "A plausible alternative interpretation...",
+            "falsifiable_condition": "One specific verifiable outcome to watch"
+        }}
+    ]
 }}"""
 
 
@@ -147,26 +148,20 @@ OUTPUT (JSON):
 }}"""
 
 
-# Final narrative generation
-NARRATIVE_PROMPT = """You are a Senior Strategic Advisor providing an intelligence briefing to a VIP client.
+# Multi-Pillar Narrative generation
+NARRATIVE_PROMPT = """You are a Senior Strategic Advisor providing an intelligence briefing.
 
-STATEMENT ANALYZED: "{tweet}"
-STAKEHOLDERS: {actions}
+TASK: Take the identified "Intelligence Pillars" and write a cohesive, sophisticated briefing.
 
-KEY INPUTS:
-- Strategic Context: {strategic_context}
-- Causal Reasoning: {causal_reasoning}
-- Main Thesis: {main_thesis} (Confidence: {thesis_confidence})
-- Competing Thesis: {competing_thesis}
-- Red Team Review: {challenges}
+{pillars_data}
 
-TASK: Write a sophisticated, deep-dive intelligence brief.
-1. **The Lead**: Summarize the event and its immediate strategic meaning.
-2. **The Deep Dive**: Use the Strategic Context and Causal Reasoning to explain the "inner workings" of this event. Why does it matter to the bigger picture?
-3. **The Counter-Perspective**: Present the competing thesis and why it's worth considering.
-4. **Risk Assessment**: What should the client watch for next? Mention the Falsifiable Condition.
+STRUCTURE:
+1. **Executive Summary**: 1 paragraph summarizing the overall strategic posture across all pillars.
+2. **Strategic Deep Dives**: For each pillar, use the provided context and reasoning to tell a story. Explain the "inner workings". Use headers.
+3. **Synthesis**: Are there connections between these pillars? (e.g., is Trade being used as leverage for Border?)
+4. **Risk Assessment**: What is the #1 thing to watch in the next 7 days?
 
-TONE: Professional, authoritative, yet explanatory. Break down complex jargon. Use clear logic.
+TONE: Professional, authoritative, and explanatory. Break down complex jargon.
 
 OUTPUT:"""
 

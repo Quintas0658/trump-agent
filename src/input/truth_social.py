@@ -48,11 +48,11 @@ class TruthSocialScraper:
         url = f"{self.APIFY_BASE_URL}/actor-tasks/{self.TASK_ID}/run-sync-get-dataset-items"
         
         # Override input configuration
-        # Note: useLastPostId=false ensures we always get fresh posts (not incremental)
+        # Note: useLastPostId=True ensures incremental fetching (saves money)
         run_input = {
             "username": username,
             "maxPosts": max_posts,
-            "useLastPostId": False,  # Always fetch fresh, let our app handle dedup
+            "useLastPostId": True,  # Back to incremental mode
             "cleanContent": True,
         }
         
@@ -129,7 +129,7 @@ class TruthSocialScraper:
 class MockTruthSocialScraper:
     """Mock scraper for testing."""
     
-    def fetch_recent_posts(self, username: str = "realDonaldTrump", max_posts: int = 20) -> list[TruthPost]:
+    def fetch_recent_posts(self, username: str = "realDonaldTrump", max_posts: int = 10) -> list[TruthPost]:
         """Return mock posts for testing."""
         return [
             TruthPost(

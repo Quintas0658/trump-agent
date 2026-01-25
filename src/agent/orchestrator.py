@@ -177,70 +177,60 @@ class AgentOrchestrator:
             context = "\n".join([r['content'][:300] for r in search_results[:10]])
             actions = [a.statement for a in (j0_result.actions_found if j0_result else [])]
             
-            j2_data = self.llm.generate_thesis_and_competing(input_text, context, actions)
+            # 1. Generate Intelligence Pillars
+            pillar_results = self.llm.generate_thesis_and_competing(input_text, context, actions)
+            raw_pillars = pillar_results.get('pillars', [])
             
-            # Robustly parse confidence values to fix the 700% (7.0) and "High" string bugs
-            j2_data['thesis_confidence'] = self._parse_confidence(j2_data.get('thesis_confidence'))
-            j2_data['competing_confidence'] = self._parse_confidence(j2_data.get('competing_confidence'))
+            processed_pillars = []
+            for raw_p in raw_pillars:
+                # Robustly parse confidence
+                conf = self._parse_confidence(raw_p.get('confidence', 0.5))
+                
+                pillar = IntelligencePillar(
+                    title=raw_p.get('title', 'Unknown Pillar'),
+                    summary=raw_p.get('summary', 'No summary provided.'),
+                    strategic_context=raw_p.get('strategic_context', 'No context provided.'),
+                    causal_reasoning=raw_p.get('causal_reasoning', 'No reasoning provided.'),
+                    confidence=conf,
+                    evidence=raw_p.get('evidence', []),
+                    competing_explanation=raw_p.get('competing_explanation'),
+                    falsifiable_condition=raw_p.get('falsifiable_condition')
+                )
+                
+                # Devil's Advocate for each pillar (Optional: Could do per-pillar or overall)
+                # For now, let's keep it simple and just add the pillar
+                processed_pillars.append(pillar)
+                
+                # Save to Hypothesis Store
+                self.hypothesis_store.insert(Hypothesis(
+                    statement=pillar.title + ": " + pillar.summary,
+                    falsifiable_condition=pillar.falsifiable_condition or "None",
+                    verification_deadline=datetime.utcnow() + timedelta(days=7),
+                    confidence=pillar.confidence
+                ))
+
+            # 2. Generate Final Narrative based on all pillars
+            pillars_data_str = "\n\n".join([
+                f"Pillar: {p.title}\nContext: {p.strategic_context}\nReasoning: {p.causal_reasoning}" 
+                for p in processed_pillars
+            ])
             
-            j2_data.setdefault('thesis_evidence', [])
-            j2_data.setdefault('competing_evidence', [])
-            j2_data.setdefault('competing_thesis', '')
-            j2_data.setdefault('why_main_over_competing', '')
-            j2_data.setdefault('strategic_context', 'No strategic context provided.')
-            j2_data.setdefault('causal_reasoning', 'No causal reasoning provided.')
-            
-            j2_result = Judgment2(**j2_data)
-            
-            red_team = devils_advocate.challenge(
-                j2_result.main_thesis, 
-                j2_result.thesis_evidence, 
-                1
+            narrative_prompt = prompts.NARRATIVE_PROMPT.format(
+                pillars_data=pillars_data_str,
+                challenges="None" # Red team logic to be updated later
             )
-            # Re-clamp after red team adjustment
-            j2_result.thesis_confidence = max(0.1, min(0.95, j2_result.thesis_confidence + red_team.confidence_adjustment))
-            
-            j3_data = self.llm.generate_falsifiable_condition(j2_result.main_thesis, context)
-            from datetime import timedelta
-            # Extract deadline_days from LLM response, default to 7 days
-            deadline_days = int(j3_data.pop('deadline_days', 7))
-            j3_result = Judgment3(
-                falsifiable_condition=j3_data.get('falsifiable_condition', 'No condition specified'),
-                verification_deadline=datetime.utcnow() + timedelta(days=deadline_days),
-                what_if_triggered=j3_data.get('what_if_triggered', 'Unknown impact')
-            )
-            
-            self.hypothesis_store.insert(Hypothesis(
-                statement=j2_result.main_thesis, 
-                falsifiable_condition=j3_result.falsifiable_condition,
-                verification_deadline=j3_result.verification_deadline, 
-                confidence=j2_result.thesis_confidence
-            ))
+            narrative_resp = self.llm.generate(narrative_prompt)
+            briefing_text = narrative_resp.content
             
         briefing = DailyBriefing(
             generated_at=datetime.utcnow(),
             analysis_date=datetime.utcnow().strftime("%Y-%m-%d"),
-            source_summary="Batch Synthesis",
+            source_summary="Multi-Pillar Strategic Synthesis",
             source_quote=input_text[:500],
             judgment_0=j0_result.result if j0_result else "UNKNOWN",
             judgment_1=j1_result.result if j1_result else "UNKNOWN",
-            judgment_reasoning=j1_result.reasoning if j1_result else "Analysis incomplete",
-            strategic_context=j2_result.strategic_context if j2_result else None,
-            causal_reasoning=j2_result.causal_reasoning if j2_result else None,
-            main_thesis=j2_result.main_thesis if j2_result else None,
-            thesis_confidence=j2_result.thesis_confidence if j2_result else 0.0,
-            thesis_evidence=j2_result.thesis_evidence if j2_result else [],
-            competing_explanation=CompetingExplanation(
-                explanation=j2_result.competing_thesis, 
-                evidence=j2_result.competing_evidence,
-                confidence=j2_result.competing_confidence
-            ) if j2_result else None,
-            falsifiable_condition=FalsifiableCondition(
-                condition=j3_result.falsifiable_condition, 
-                deadline=j3_result.verification_deadline,
-                what_if_triggered=j3_result.what_if_triggered
-            ) if j3_result else None,
-            red_team_notes=[RedTeamNote(challenge=c.challenge_text, severity=c.severity) for c in (red_team.challenges if red_team else [])],
+            judgment_reasoning=briefing_text if j1_result and j1_result.result == Judgment1Result.YES else (j1_result.reasoning if j1_result else "Analysis incomplete"),
+            pillars=processed_pillars if j1_result and j1_result.result == Judgment1Result.YES else [],
             search_count=state.search_result_count, 
             loop_count=state.loop_count, 
             stop_reason=state.stop_reason

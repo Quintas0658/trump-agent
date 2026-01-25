@@ -30,8 +30,21 @@ class RedTeamNote:
 
 
 @dataclass
+class IntelligencePillar:
+    """A distinct strategic theme identified in the batch."""
+    title: str
+    summary: str
+    strategic_context: str
+    causal_reasoning: str
+    confidence: float
+    evidence: list[str]
+    competing_explanation: Optional[str] = None
+    falsifiable_condition: Optional[str] = None
+
+
+@dataclass
 class DailyBriefing:
-    """The final output structure for a daily briefing."""
+    """The final output structure for a multi-pillar briefing."""
     # Metadata
     generated_at: datetime
     analysis_date: str  # YYYY-MM-DD
@@ -45,23 +58,10 @@ class DailyBriefing:
     judgment_1: str = "UNKNOWN"
     judgment_reasoning: str = ""
     
-    # NEW: Strategic Context & Causal Reasoning
-    strategic_context: Optional[str] = None  # Who/What/Where background
-    causal_reasoning: Optional[str] = None   # Why/How implications
+    # NEW: Intelligence Pillars (Supports any number of themes)
+    pillars: list[IntelligencePillar] = field(default_factory=list)
     
-    # Main thesis (if J1 = YES or UNCERTAIN)
-    main_thesis: Optional[str] = None
-    thesis_confidence: float = 0.0
-    thesis_evidence: list[str] = field(default_factory=list)
-    
-    # Competing explanation (required if main_thesis exists)
-    competing_explanation: Optional[CompetingExplanation] = None
-    why_main_over_competing: Optional[str] = None
-    
-    # Falsifiable condition (required if main_thesis exists)
-    falsifiable_condition: Optional[FalsifiableCondition] = None
-    
-    # Red team notes
+    # Red team notes (overall)
     red_team_notes: list[RedTeamNote] = field(default_factory=list)
     
     # If J1 = NO or gave up
@@ -102,15 +102,9 @@ class ReportGenerator:
 
 ---
 
-## 🏛️ Strategic Context
-{strategic_context}
+## 🏛️ Strategic Intelligence Pillars
 
-## ⛓️ Causal Reasoning
-{causal_reasoning}
-
----
-
-{main_content}
+{pillars_content}
 
 ---
 
@@ -154,14 +148,6 @@ class ReportGenerator:
         else:
             j1_meaning = "Insufficient evidence for any thesis"
         
-        # Main content
-        if briefing.main_thesis:
-            main_content = self._generate_thesis_section(briefing)
-        elif briefing.give_up_message:
-            main_content = self._generate_give_up_section(briefing)
-        else:
-            main_content = "## Analysis\n\nNo clear thesis emerged from today's signals."
-        
         # Red team section
         if briefing.red_team_notes:
             red_team_section = "\n".join([
@@ -180,15 +166,58 @@ class ReportGenerator:
             j0_meaning=j0_meaning,
             j1=briefing.judgment_1,
             j1_meaning=j1_meaning,
-            strategic_context=briefing.strategic_context or "No strategic context provided.",
-            causal_reasoning=briefing.causal_reasoning or "No causal reasoning provided.",
-            main_content=main_content,
+            pillars_content=self._generate_pillars_section(briefing),
             red_team_section=red_team_section,
             search_count=briefing.search_count,
             loop_count=briefing.loop_count,
             stop_reason=briefing.stop_reason or "Normal completion",
-            confidence=briefing.thesis_confidence,
+            confidence=0.0 if not briefing.pillars else max(p.confidence for p in briefing.pillars),
         )
+
+    def _generate_pillars_section(self, briefing: DailyBriefing) -> str:
+        """Generate the content for all intelligence pillars."""
+        if not briefing.pillars:
+            if briefing.give_up_message:
+                return f"### Analysis Inconclusive\n\n> {briefing.give_up_message}"
+            return "No intelligence pillars identified."
+
+        sections = []
+        for i, pillar in enumerate(briefing.pillars):
+            p_lines = [
+                f"### Pillar {i+1}: {pillar.title}",
+                "",
+                f"> **Summary**: {pillar.summary}",
+                f"> (Confidence: {pillar.confidence:.0%})",
+                "",
+                "#### 📍 Strategic Context",
+                pillar.strategic_context,
+                "",
+                "#### ⛓️ Causal Reasoning",
+                pillar.causal_reasoning,
+                "",
+                "#### 🔍 Key Evidence",
+            ]
+            for ev in pillar.evidence:
+                p_lines.append(f"- {ev}")
+            
+            if pillar.competing_explanation:
+                p_lines.extend([
+                    "",
+                    "#### ⚖️ Competing Explanation",
+                    pillar.competing_explanation
+                ])
+                
+            if pillar.falsifiable_condition:
+                p_lines.extend([
+                    "",
+                    "#### 🎯 Falsifiable Condition",
+                    pillar.falsifiable_condition
+                ])
+            
+            sections.append("\n".join(p_lines))
+            sections.append("\n---\n")
+            
+        return "\n".join(sections)
     
     def _generate_thesis_section(self, briefing: DailyBriefing) -> str:
         """Generate the thesis section of the report."""

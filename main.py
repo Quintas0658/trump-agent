@@ -48,7 +48,7 @@ async def generate_daily_brief(username: str, mock: bool = False, include_news: 
         from src.input.truth_social import TruthSocialScraper
         scraper = TruthSocialScraper()
         
-    posts = scraper.fetch_recent_posts(username, max_posts=20)
+    posts = scraper.fetch_recent_posts(username, max_posts=10)
     
     # Save pulses to M-CLAIM layer (skip in mock mode to avoid network issues)
     from src.memory.claim_store import ClaimStore

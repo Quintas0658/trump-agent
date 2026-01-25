@@ -54,22 +54,27 @@ async def generate_daily_brief(username: str, mock: bool = False, include_news: 
     from src.memory.claim_store import ClaimStore
     from src.memory.schema import Claim
     
-    pending_pulses = []
     if mock:
         # In mock mode, just use in-memory claims without DB
+        pending_pulses = []
         for post in posts:
             claim = Claim(claim_text=post.text, attributed_to=username, claimed_at=post.created_at)
             pending_pulses.append(claim)
     else:
         claim_store = ClaimStore(orchestrator.event_store.client)
+        
+        # Insert NEW posts from Apify
         for post in posts:
-            claim_id = claim_store.insert(Claim(
+            claim_store.insert(Claim(
                 claim_text=post.text,
                 attributed_to=username,
                 claimed_at=post.created_at
             ))
-            claim = Claim(id=claim_id, claim_text=post.text, attributed_to=username, claimed_at=post.created_at)
-            pending_pulses.append(claim)
+        
+        # Query ALL pending claims from the last 24h (includes Politico, old Trump posts, etc.)
+        print("[*] Querying all pending claims from Supabase (last 24h)...")
+        pending_pulses = claim_store.get_pending_claims(limit=50)
+        print(f"[*] Found {len(pending_pulses)} pending claims to analyze.")
     
     # Add news signals if requested
     if include_news:
@@ -80,15 +85,15 @@ async def generate_daily_brief(username: str, mock: bool = False, include_news: 
             trump_news = filter_trump_related(all_news)
             for news in trump_news[:5]:
                 news_text = f"NEWS: {news.title}. {news.description}"
-                claim_id = claim_store.insert(Claim(
+                claim_store.insert(Claim(
                     claim_text=news_text,
                     attributed_to=news.source,
                     source_url=news.link
                 ))
-                pending_pulses.append(Claim(id=claim_id, claim_text=news_text, attributed_to=news.source))
+                pending_pulses.append(Claim(claim_text=news_text, attributed_to=news.source))
     
     if not pending_pulses:
-        print("[!] No new pulses detected to analyze.")
+        print("[!] No pending claims found to analyze.")
         return None
         
     # 3. Intelligent Batch Synthesis (The SitRep)

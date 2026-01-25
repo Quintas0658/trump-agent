@@ -70,13 +70,13 @@ OUTPUT (JSON):
 
 
 # Judgment 2: Multi-Pillar Strategic Analysis
-JUDGMENT_2_PROMPT = """You are a Senior Strategic Analyst. Your task is to identify the MULTIPLE distinct strategic themes (Intelligence Pillars) present in these signals.
+JUDGMENT_2_PROMPT = """You are a Senior Strategic Analyst. Your task is to identify ALL distinct strategic themes (Intelligence Pillars) present in these signals.
 
 STATEMENT BATCH: "{tweet}"
 ACTIONS RECORDED: {actions}
 SEARCH CONTEXT: {context}
 
-YOUR GOAL: Segment these pulses into 3-5 distinct "Intelligence Pillars". For each pillar, explain the "Who", the "Why", and the "So What" for someone unfamiliar with US politics.
+YOUR GOAL: Segment these pulses into as many distinct "Intelligence Pillars" as you can identify. Do NOT limit yourself to a fixed number. For each pillar, explain the "Who", the "Why", and the "So What" for someone unfamiliar with US politics.
 
 PRYING QUESTIONS FOR EACH PILLAR:
 - WHO: Who are the key players and what is their historical role?

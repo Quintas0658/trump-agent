@@ -104,6 +104,23 @@ class ClaimStore:
         
         return [self._to_claim(row) for row in result.data]
 
+    def get_claims_in_window(self, hours: int = 24, limit: int = 50) -> List[Claim]:
+        """Get all claims within the time window (regardless of status)."""
+        if not self.client:
+            return []
+        
+        from datetime import datetime, timedelta
+        cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+            
+        result = self.client.table("claims") \
+            .select("*") \
+            .gte("created_at", cutoff) \
+            .order("created_at", desc=True) \
+            .limit(limit) \
+            .execute()
+        
+        return [self._to_claim(row) for row in result.data]
+
     def update_status(self, claim_id: str, status: str) -> None:
         """Update the processing status of a claim."""
         if not self.client:

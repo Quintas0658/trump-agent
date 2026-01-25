@@ -6,6 +6,7 @@ import vertexai
 from vertexai.generative_models import GenerativeModel, GenerationConfig
 
 from src.config import config
+from src.agent import prompts
 
 
 @dataclass
@@ -75,22 +76,11 @@ ENTITIES:"""
         entities = [e.strip() for e in response.content.split(",") if e.strip()]
         return entities
     
-    def analyze_for_actions(self, text: str, search_context: str) -> dict:
-        """Analyze text to detect real-world actions."""
-        prompt = f"""You are analyzing a political statement for REAL-WORLD ACTIONS.
-
-STATEMENT: "{text}"
-
-BACKGROUND CONTEXT:
-{search_context}
-
-TASK: Determine if there are REAL-WORLD ACTIONS (not just words/threats/promises).
-RESPOND WITH ONLY JSON:
-{{
-    "has_actions": true/false,
-    "actions": ["action 1"],
-    "reasoning": "explanation"
-}}"""
+    def analyze_for_actions(self, text: str, search_context: str, memory_context: str = "") -> dict:
+        """Analyze text to detect real-world actions using shared prompt."""
+        prompt = prompts.JUDGMENT_0_PROMPT.format(
+            tweet=text, search_context=search_context, memory_context=memory_context
+        )
         
         response = self.generate(prompt, temperature=0.2)
         import json
@@ -100,45 +90,47 @@ RESPOND WITH ONLY JSON:
             elif "```" in content: content = content.split("```")[1]
             return json.loads(content)
         except:
-            return {"has_actions": False, "actions": [], "reasoning": "Parse error"}
+            return {"judgment_0": "LANGUAGE_ONLY", "actions_found": [], "reasoning": "Parse error"}
 
     def generate_thesis_and_competing(self, tweet, context, actions):
-        """Standard thesis generation logic."""
-        prompt = f"""Analyze this statement: "{tweet}"
-Context: {context}
-Actions: {actions}
-Return JSON with: main_thesis, thesis_evidence, thesis_confidence, competing_thesis, competing_evidence, competing_confidence, why_main_over_competing."""
+        """Strategic thesis generation using shared prompt."""
+        prompt = prompts.JUDGMENT_2_PROMPT.format(
+            tweet=tweet, context=context, actions=actions
+        )
         response = self.generate(prompt, temperature=0.5)
         import json
         try:
             content = response.content.strip()
             if "```json" in content: content = content.split("```json")[1].split("```")[0]
+            elif "```" in content: content = content.split("```")[1]
             return json.loads(content)
         except: return {"main_thesis": "Error", "thesis_evidence": [], "thesis_confidence": 0}
 
     def generate_falsifiable_condition(self, thesis, context):
-        """Standard falsifiable condition logic."""
-        prompt = f"""Thesis: {thesis}
-Context: {context}
-Return JSON with: falsifiable_condition, deadline_days, what_if_triggered."""
+        """Standard falsifiable condition logic using shared prompt."""
+        prompt = prompts.JUDGMENT_3_PROMPT.format(
+            thesis=thesis, context=context
+        )
         response = self.generate(prompt, temperature=0.3)
         import json
         try:
             content = response.content.strip()
             if "```json" in content: content = content.split("```json")[1].split("```")[0]
+            elif "```" in content: content = content.split("```")[1]
             return json.loads(content)
         except: return {"falsifiable_condition": "Error", "deadline_days": 7}
 
     def red_team_challenge(self, thesis, evidence):
-        """Standard red team logic."""
-        prompt = f"""Challenge this Thesis: {thesis}
-Evidence: {evidence}
-Return JSON with: challenges, alternative_explanations, suggested_searches, overall_severity."""
+        """Standard red team logic using shared prompt."""
+        prompt = prompts.RED_TEAM_PROMPT.format(
+            thesis=thesis, evidence=evidence
+        )
         response = self.generate(prompt, temperature=0.6)
         import json
         try:
             content = response.content.strip()
             if "```json" in content: content = content.split("```json")[1].split("```")[0]
+            elif "```" in content: content = content.split("```")[1]
             return json.loads(content)
         except: return {"challenges": [], "overall_severity": "low"}
 

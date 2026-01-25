@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""
+Trump Policy Analysis Agent - CLI Entry Point
+"""
+
+import asyncio
+import sys
+import argparse
+import os
+from datetime import datetime
+from dotenv import load_dotenv
+
+from src.config import config
+from src.agent.orchestrator import orchestrator
+from src.output.report_generator import report_generator
+from src.input.truth_social import TruthSocialScraper, MockTruthSocialScraper
+
+async def analyze_single_tweet(tweet_text: str):
+    """Analyze a single tweet and print the report."""
+    try:
+        briefing = await orchestrator.analyze_tweet(tweet_text)
+        markdown = report_generator.generate_markdown(briefing)
+        
+        print("\n" + "="*50)
+        print("ANALYSIS REPORT")
+        print("="*50 + "\n")
+        print(markdown)
+        
+    except Exception as e:
+        print(f"Error during analysis: {e}")
+        import traceback
+        traceback.print_exc()
+
+async def generate_daily_brief(username: str, mock: bool = False, include_news: bool = True):
+    """The SitRep Phase: Sweep environment, collect pulses, and batch-synthesize intelligence."""
+    print(f"[*] Starting Daily Intelligence Cycle for @{username}...")
+    
+    # 1. Proactive Daily Sweep (Environment Tier)
+    from src.input.daily_sweep import DailySweep
+    sweep = DailySweep()
+    await sweep.run()
+    
+    # 2. Ingest Pulses (Pulse Tier)
+    if mock:
+        from src.input.truth_social import MockTruthSocialScraper
+        scraper = MockTruthSocialScraper()
+    else:
+        from src.input.truth_social import TruthSocialScraper
+        scraper = TruthSocialScraper()
+        
+    posts = scraper.fetch_recent_posts(username, max_posts=5)
+    
+    # Save pulses to M-CLAIM layer (skip in mock mode to avoid network issues)
+    from src.memory.claim_store import ClaimStore
+    from src.memory.schema import Claim
+    
+    pending_pulses = []
+    if mock:
+        # In mock mode, just use in-memory claims without DB
+        for post in posts:
+            claim = Claim(claim_text=post.text, attributed_to=username, claimed_at=post.created_at)
+            pending_pulses.append(claim)
+    else:
+        claim_store = ClaimStore(orchestrator.event_store.client)
+        for post in posts:
+            claim_id = claim_store.insert(Claim(
+                claim_text=post.text,
+                attributed_to=username,
+                claimed_at=post.created_at
+            ))
+            claim = Claim(id=claim_id, claim_text=post.text, attributed_to=username, claimed_at=post.created_at)
+            pending_pulses.append(claim)
+    
+    # Add news signals if requested
+    if include_news:
+        from src.input.news_aggregator import NewsAggregator, filter_trump_related
+        print("[*] Fetching news signals...")
+        with NewsAggregator() as aggregator:
+            all_news = aggregator.fetch_all(max_per_source=5)
+            trump_news = filter_trump_related(all_news)
+            for news in trump_news[:5]:
+                news_text = f"NEWS: {news.title}. {news.description}"
+                claim_id = claim_store.insert(Claim(
+                    claim_text=news_text,
+                    attributed_to=news.source,
+                    source_url=news.link
+                ))
+                pending_pulses.append(Claim(id=claim_id, claim_text=news_text, attributed_to=news.source))
+    
+    if not pending_pulses:
+        print("[!] No new pulses detected to analyze.")
+        return
+        
+    # 3. Intelligent Batch Synthesis (The SitRep)
+    print(f"[*] Synthesizing {len(pending_pulses)} pulses into a Strategic Situation Report...")
+    briefing = await orchestrator.analyze_batch(pending_pulses)
+    
+    # 4. Output Report
+    from src.output.report_generator import report_generator
+    report_generator.print_briefing(briefing)
+
+def main():
+    load_dotenv()
+    
+    # Check for missing config
+    missing = config.validate()
+    if missing:
+        print(f"[!] Warning: Missing environment variables: {', '.join(missing)}")
+        print("[!] Some features may not work correctly.")
+    
+    parser = argparse.ArgumentParser(description="Trump Policy Analysis Agent")
+    parser.add_argument("--tweet", type=str, help="Analyze a specific tweet/text")
+    parser.add_argument("--username", type=str, default="realDonaldTrump", help="Truth Social username to track")
+    parser.add_argument("--daily", action="store_true", help="Generate daily brief from recent posts")
+    parser.add_argument("--mock", action="store_true", help="Use mock data instead of live APIs")
+    
+    args = parser.parse_args()
+    
+    if args.tweet:
+        asyncio.run(analyze_single_tweet(args.tweet))
+    elif args.daily:
+        asyncio.run(generate_daily_brief(args.username, args.mock))
+    else:
+        parser.print_help()
+
+if __name__ == "__main__":
+    main()

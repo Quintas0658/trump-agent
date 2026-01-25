@@ -169,7 +169,13 @@ class AgentOrchestrator:
             
             j3_data = self.llm.generate_falsifiable_condition(j2_result.main_thesis, context)
             from datetime import timedelta
-            j3_result = Judgment3(**j3_data, verification_deadline=datetime.utcnow() + timedelta(days=7))
+            # Extract deadline_days from LLM response, default to 7 days
+            deadline_days = int(j3_data.pop('deadline_days', 7))
+            j3_result = Judgment3(
+                falsifiable_condition=j3_data.get('falsifiable_condition', 'No condition specified'),
+                verification_deadline=datetime.utcnow() + timedelta(days=deadline_days),
+                what_if_triggered=j3_data.get('what_if_triggered', 'Unknown impact')
+            )
             
             self.hypothesis_store.insert(Hypothesis(
                 statement=j2_result.main_thesis, 

@@ -64,3 +64,29 @@ CREATE TABLE IF NOT EXISTS claims (
 
 CREATE INDEX IF NOT EXISTS idx_claims_attributed ON claims(attributed_to, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_claims_status ON claims(processing_status);
+
+-- 5. TRUMP_POSTS: Raw posts from Truth Social (for memory persistence)
+CREATE TABLE IF NOT EXISTS trump_posts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    post_id VARCHAR UNIQUE NOT NULL,       -- Apify's original ID
+    text TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    fetched_at TIMESTAMPTZ DEFAULT NOW(),
+    media_urls JSONB DEFAULT '[]',
+    entities TEXT[] DEFAULT '{}'           -- Extracted entities
+);
+
+CREATE INDEX IF NOT EXISTS idx_posts_created ON trump_posts(created_at DESC);
+
+-- 6. DAILY_REPORTS: Strategic analysis reports (for cross-day continuity)
+CREATE TABLE IF NOT EXISTS daily_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    report_date DATE UNIQUE NOT NULL,
+    report_content TEXT NOT NULL,
+    key_hypotheses JSONB DEFAULT '[]',     -- [{hypothesis, confidence, deadline}]
+    key_entities TEXT[] DEFAULT '{}',
+    summary TEXT,                          -- 1-2 sentence summary for quick recall
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_reports_date ON daily_reports(report_date DESC);

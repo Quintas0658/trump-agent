@@ -1,7 +1,7 @@
 """Truth Social scraper - Fetches Trump's posts via Apify."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 import httpx
 
@@ -29,7 +29,8 @@ class TruthSocialScraper:
     """
     
     APIFY_BASE_URL = "https://api.apify.com/v2"
-    TASK_ID = "lissome_jolt~truth-social-scraper-task"
+    APIFY_BASE_URL = "https://api.apify.com/v2"
+    ACTOR_ID = "muhammetakkurtt~truth-social-scraper"
     
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or config.APIFY_API_KEY
@@ -38,29 +39,28 @@ class TruthSocialScraper:
     def fetch_recent_posts(
         self, 
         username: str = "realDonaldTrump",
-        max_posts: int = 5
+        max_posts: int = 5,
+        use_incremental: bool = True
     ) -> list[TruthPost]:
-        """Fetch recent posts synchronously using the specific task."""
+        """Fetch recent posts synchronously using the specific actor."""
         if not self.api_key:
             print("[!] APIFY_API_KEY missing. Returning empty list.")
             return []
             
-        url = f"{self.APIFY_BASE_URL}/actor-tasks/{self.TASK_ID}/run-sync-get-dataset-items"
+        url = f"{self.APIFY_BASE_URL}/acts/{self.ACTOR_ID}/run-sync-get-dataset-items"
         
         # Override input configuration
-        # Note: useLastPostId=True ensures incremental fetching (saves money)
         run_input = {
             "username": username,
-            "maxPosts": max_posts,
-            "useLastPostId": True,  # Back to incremental mode
-            "cleanContent": True,
+            "resultsLimit": max_posts, # Parameter name might differ for this actor
+            "searchType": "posts",
         }
         
         # Retry logic with exponential backoff
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                print(f"[*] Triggering Apify sync task for {username}... (attempt {attempt + 1}/{max_retries})")
+                print(f"[*] Triggering Apify sync task for {username} (muhammetakkurtt scraper)... (attempt {attempt + 1}/{max_retries})")
                 response = self.client.post(
                     url,
                     params={"token": self.api_key},
@@ -75,7 +75,7 @@ class TruthSocialScraper:
                 print(f"[!] Apify attempt {attempt + 1} failed: {e}")
                 if attempt < max_retries - 1:
                     import time
-                    wait_time = 2 ** attempt  # 1s, 2s, 4s
+                    wait_time = 2 ** attempt
                     print(f"[*] Retrying in {wait_time} seconds...")
                     time.sleep(wait_time)
                 else:
@@ -131,11 +131,12 @@ class MockTruthSocialScraper:
     
     def fetch_recent_posts(self, username: str = "realDonaldTrump", max_posts: int = 10) -> list[TruthPost]:
         """Return mock posts for testing."""
+        now = datetime.utcnow()
         return [
             TruthPost(
                 id="123456",
                 text="Just had a GREAT call with President Delcy of Venezuela. She understands STRENGTH! 🇺🇸🇻🇪",
-                created_at=datetime(2026, 1, 12, 14, 22),
+                created_at=now - timedelta(minutes=30),
                 media_urls=[],
                 reply_count=1234,
                 repost_count=5678,
@@ -145,7 +146,7 @@ class MockTruthSocialScraper:
             TruthPost(
                 id="123457",
                 text="Good news from Iran. They have stopped killing people...",
-                created_at=datetime(2026, 1, 16, 10, 30),
+                created_at=now - timedelta(hours=2),
                 media_urls=[],
                 reply_count=987,
                 repost_count=4321,

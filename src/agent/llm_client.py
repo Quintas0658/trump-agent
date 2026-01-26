@@ -19,6 +19,7 @@ class LLMResponse:
     model: str
     usage: Optional[dict] = None
     thoughts_token_count: Optional[int] = None  # Track thinking tokens
+    function_call: Optional[object] = None  # For ReAct function calling
 
 
 class GeminiClient:
@@ -84,6 +85,111 @@ class GeminiClient:
             )
         except Exception as e:
             raise RuntimeError(f"Vertex AI error: {e}") from e
+    
+    def generate_with_tools(
+        self,
+        messages: list,
+        tools=None,
+        temperature: float = 0.7,
+        max_tokens: int = 8192,
+        model: str = None,
+        thinking_budget: int = None,
+    ) -> LLMResponse:
+        """Generate a response with function calling support for ReAct loop.
+        
+        Args:
+            messages: Conversation history as list of dicts with role/content
+            tools: Tool object with function declarations
+            temperature: Sampling temperature
+            max_tokens: Max output tokens
+            model: Model to use (defaults to thinking_model)
+            thinking_budget: Token budget for thinking mode
+            
+        Returns:
+            LLMResponse with either content or function_call populated
+        """
+        from google.genai.types import Content, Part
+        
+        active_model = model or self.thinking_model
+        
+        # Convert messages to Content objects
+        contents = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            
+            # Handle function responses
+            if role == "function":
+                # Function result format for Gemini
+                contents.append(Content(
+                    role="function",
+                    parts=[Part.from_function_response(
+                        name=msg.get("name", "unknown"),
+                        response={"result": content}
+                    )]
+                ))
+            elif role == "assistant" and msg.get("function_call"):
+                # Assistant's function call
+                fc = msg["function_call"]
+                contents.append(Content(
+                    role="model",
+                    parts=[Part.from_function_call(
+                        name=fc["name"],
+                        args=fc["arguments"]
+                    )]
+                ))
+            else:
+                # Regular user/assistant message
+                gemini_role = "model" if role == "assistant" else "user"
+                if content:  # Only add if content exists
+                    contents.append(Content(
+                        role=gemini_role,
+                        parts=[Part.from_text(text=content)]
+                    ))
+        
+        # Build config with tools inside
+        config_kwargs = {"temperature": temperature, "max_output_tokens": max_tokens}
+        if thinking_budget is not None:
+            config_kwargs["thinking_config"] = ThinkingConfig(thinking_budget=thinking_budget)
+        if tools:
+            config_kwargs["tools"] = [tools]
+        
+        try:
+            response = self.client.models.generate_content(
+                model=active_model,
+                contents=contents,
+                config=GenerateContentConfig(**config_kwargs),
+            )
+            
+            # Check for function call in response
+            function_call = None
+            content_text = ""
+            
+            if response.candidates and response.candidates[0].content.parts:
+                for part in response.candidates[0].content.parts:
+                    if hasattr(part, 'function_call') and part.function_call:
+                        function_call = part.function_call
+                    elif hasattr(part, 'text') and part.text:
+                        content_text += part.text
+            
+            # Extract thinking tokens
+            thoughts_tokens = None
+            if hasattr(response, 'usage_metadata') and hasattr(response.usage_metadata, 'thoughts_token_count'):
+                thoughts_tokens = response.usage_metadata.thoughts_token_count
+            
+            return LLMResponse(
+                content=content_text,
+                model=active_model,
+                usage={
+                    "prompt_tokens": response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') else None,
+                    "completion_tokens": response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') else None,
+                },
+                thoughts_token_count=thoughts_tokens,
+                function_call=function_call,
+            )
+            
+        except Exception as e:
+            raise RuntimeError(f"Vertex AI (tools) error: {e}") from e
     
     def extract_entities(self, text: str) -> list[str]:
         """Extract key entities from text."""

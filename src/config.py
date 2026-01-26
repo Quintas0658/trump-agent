@@ -17,7 +17,7 @@ class Config:
     TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
     
     # Data Ingestion
-    APIFY_API_KEY: str = os.getenv("APIFY_API_KEY", "")
+    APIFY_API_KEY: str = os.getenv("APIFY_API_KEY", "REDACTED_APIFY_TOKEN")
     
     # LLM
     GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")

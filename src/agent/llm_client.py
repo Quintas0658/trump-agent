@@ -101,14 +101,9 @@ ENTITIES:"""
         prompt = prompts.JUDGMENT_2_PROMPT.format(
             tweet=tweet, context=context, actions=actions
         )
-        # Use Thinking Model for deep strategic analysis
-        # Note: Thinking models may not support temperature, so we let it default (None)
-        # or use a standard value. We'll try passing model arg.
-        response = self.generate(
-            prompt, 
-            temperature=0.7,  # Thinking models can handle creativity
-            model="gemini-2.0-flash-thinking-exp"
-        )
+        # Use Gemini 2.5 Flash for strategic analysis (supports thinking mode via parameters)
+        # The thinking is built into 2.5 Flash via the thinking_level configuration.
+        response = self.generate(prompt, temperature=0.5, model="gemini-2.5-flash")
         import json
         try:
             content = response.content.strip()

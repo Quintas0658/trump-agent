@@ -116,8 +116,20 @@ ENTITIES:"""
 
     def generate_thesis_and_competing(self, tweet, context, actions):
         """Strategic thesis generation with Thinking mode enabled."""
+        import re
+        
+        # Strip HTML tags from input to prevent pollution
+        def strip_html(text):
+            if not text:
+                return text
+            clean = re.sub(r'<[^>]+>', '', str(text))
+            return clean.strip()
+        
+        clean_tweet = strip_html(tweet)
+        clean_context = strip_html(context)
+        
         prompt = prompts.JUDGMENT_2_PROMPT.format(
-            tweet=tweet, context=context, actions=actions
+            tweet=clean_tweet, context=clean_context, actions=actions
         )
         # Use Gemini 2.5 Flash with explicit Thinking budget for deep reasoning
         response = self.generate(
@@ -130,14 +142,35 @@ ENTITIES:"""
         # Log thinking tokens if available
         if response.thoughts_token_count:
             print(f"[Thinking] Model used {response.thoughts_token_count} tokens for reasoning.")
+        else:
+            print("[Thinking] No thinking token count returned (may not be supported in this config).")
         
         import json
         try:
             content = response.content.strip()
+            # Debug: Log first 500 chars of raw response
+            print(f"[DEBUG J2] Raw response (first 500 chars): {content[:500]}...")
+            
             if "```json" in content: content = content.split("```json")[1].split("```")[0]
             elif "```" in content: content = content.split("```")[1]
-            return json.loads(content)
-        except: return {"main_thesis": "Error", "thesis_evidence": [], "thesis_confidence": 0}
+            parsed = json.loads(content)
+            
+            # Ensure pillars key exists
+            if 'pillars' not in parsed:
+                print("[DEBUG J2] 'pillars' key missing, checking for alternative keys...")
+                # Handle legacy format or error cases
+                if 'main_thesis' in parsed:
+                    parsed['pillars'] = [{
+                        'title': 'Analysis Result',
+                        'summary': parsed.get('main_thesis', 'Unknown'),
+                        'confidence': parsed.get('thesis_confidence', 0.5),
+                        'evidence': parsed.get('thesis_evidence', [])
+                    }]
+            
+            return parsed
+        except Exception as e:
+            print(f"[DEBUG J2] JSON parse failed: {e}")
+            return {"pillars": [], "main_thesis": "Error", "thesis_evidence": [], "thesis_confidence": 0}
 
     def generate_falsifiable_condition(self, thesis, context):
         """Standard falsifiable condition logic using shared prompt."""

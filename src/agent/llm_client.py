@@ -37,9 +37,13 @@ class GeminiClient:
         prompt: str, 
         temperature: float = 0.7,
         max_tokens: int = 4096,
+        model: Optional[str] = None,
         **kwargs
     ) -> LLMResponse:
         """Generate a response from Vertex AI."""
+        
+        # Use specific model if provided, otherwise default
+        active_model = GenerativeModel(model) if model else self.model
         
         generation_config = GenerationConfig(
             temperature=temperature,
@@ -47,14 +51,14 @@ class GeminiClient:
         )
         
         try:
-            response = self.model.generate_content(
+            response = active_model.generate_content(
                 prompt,
                 generation_config=generation_config,
             )
             
             return LLMResponse(
                 content=response.text,
-                model=self.model_name,
+                model=model or self.model_name,
                 usage={
                     "prompt_tokens": response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') else None,
                     "completion_tokens": response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') else None,
@@ -97,7 +101,14 @@ ENTITIES:"""
         prompt = prompts.JUDGMENT_2_PROMPT.format(
             tweet=tweet, context=context, actions=actions
         )
-        response = self.generate(prompt, temperature=0.5)
+        # Use Thinking Model for deep strategic analysis
+        # Note: Thinking models may not support temperature, so we let it default (None)
+        # or use a standard value. We'll try passing model arg.
+        response = self.generate(
+            prompt, 
+            temperature=0.7,  # Thinking models can handle creativity
+            model="gemini-2.0-flash-thinking-exp-01-21"
+        )
         import json
         try:
             content = response.content.strip()
@@ -144,8 +155,8 @@ def get_gemini_client(mock: bool = False) -> GeminiClient:
 
 class MockGeminiClient:
     """Fallback mock client."""
-    def generate(self, prompt, **kwargs):
-        return LLMResponse(content='{"status": "mock"}', model="mock")
+    def generate(self, prompt, model: Optional[str] = None, **kwargs):
+        return LLMResponse(content='{"status": "mock"}', model=model or "mock")
     def extract_entities(self, text): return ["MockEntity"]
     def analyze_for_actions(self, t, c): return {"has_actions": False}
     def generate_thesis_and_competing(self, t, c, a): return {"main_thesis": "Mock"}

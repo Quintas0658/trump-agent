@@ -92,6 +92,7 @@ class ClaimStatus(str, Enum):
     """Processing status of a claim pulse."""
     PENDING = "PENDING"
     PROCESSING = "PROCESSING"
+    PROCESSED = "PROCESSED"
     COMPLETED = "COMPLETED"
 
 

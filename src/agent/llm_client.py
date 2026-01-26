@@ -1,9 +1,12 @@
-"""Gemini LLM client - Wrapper for Google Cloud Vertex AI."""
+"""Gemini LLM client - Wrapper for Google Cloud Vertex AI using new GenAI SDK."""
 
+import os
 from dataclasses import dataclass
 from typing import Optional
-import vertexai
-from vertexai.generative_models import GenerativeModel, GenerationConfig
+
+# New SDK imports
+from google import genai
+from google.genai.types import GenerateContentConfig, ThinkingConfig
 
 from src.config import config
 from src.agent import prompts
@@ -15,22 +18,26 @@ class LLMResponse:
     content: str
     model: str
     usage: Optional[dict] = None
+    thoughts_token_count: Optional[int] = None  # Track thinking tokens
 
 
 class GeminiClient:
-    """Client for Google Vertex AI.
+    """Client for Google Vertex AI using the new GenAI SDK.
     
-    Uses gemini-2.0-flash for high-performance strategic analysis.
+    Uses gemini-2.5-flash with Thinking mode for deep strategic analysis.
     """
     
     def __init__(self, project_id: str = "trump-analyst", location: str = "us-central1"):
         self.project_id = project_id
         self.location = location
-        self.model_name = "gemini-2.0-flash"
+        self.model_name = "gemini-2.0-flash"  # Default for fast operations
+        self.thinking_model = "gemini-2.5-flash"  # For deep analysis with Thinking
         
-        # Initialize vertexai
-        vertexai.init(project=self.project_id, location=self.location)
-        self.model = GenerativeModel(self.model_name)
+        # Initialize new GenAI client with Vertex AI
+        os.environ["GOOGLE_CLOUD_PROJECT"] = self.project_id
+        os.environ["GOOGLE_CLOUD_LOCATION"] = self.location
+        os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
+        self.client = genai.Client()
     
     def generate(
         self, 
@@ -38,31 +45,42 @@ class GeminiClient:
         temperature: float = 0.7,
         max_tokens: int = 4096,
         model: Optional[str] = None,
+        thinking_budget: Optional[int] = None,
         **kwargs
     ) -> LLMResponse:
-        """Generate a response from Vertex AI."""
+        """Generate a response from Vertex AI with optional Thinking mode."""
         
-        # Use specific model if provided, otherwise default
-        active_model = GenerativeModel(model) if model else self.model
+        active_model = model or self.model_name
         
-        generation_config = GenerationConfig(
-            temperature=temperature,
-            max_output_tokens=max_tokens,
-        )
+        # Build config with optional thinking
+        config_kwargs = {}
+        if thinking_budget is not None:
+            config_kwargs["thinking_config"] = ThinkingConfig(thinking_budget=thinking_budget)
         
         try:
-            response = active_model.generate_content(
-                prompt,
-                generation_config=generation_config,
+            response = self.client.models.generate_content(
+                model=active_model,
+                contents=prompt,
+                config=GenerateContentConfig(
+                    temperature=temperature,
+                    max_output_tokens=max_tokens,
+                    **config_kwargs
+                ) if config_kwargs else None,
             )
+            
+            # Extract thinking token count if available
+            thoughts_tokens = None
+            if hasattr(response, 'usage_metadata') and hasattr(response.usage_metadata, 'thoughts_token_count'):
+                thoughts_tokens = response.usage_metadata.thoughts_token_count
             
             return LLMResponse(
                 content=response.text,
-                model=model or self.model_name,
+                model=active_model,
                 usage={
                     "prompt_tokens": response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') else None,
                     "completion_tokens": response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') else None,
-                }
+                },
+                thoughts_token_count=thoughts_tokens
             )
         except Exception as e:
             raise RuntimeError(f"Vertex AI error: {e}") from e
@@ -97,13 +115,22 @@ ENTITIES:"""
             return {"judgment_0": "LANGUAGE_ONLY", "actions_found": [], "reasoning": "Parse error"}
 
     def generate_thesis_and_competing(self, tweet, context, actions):
-        """Strategic thesis generation using shared prompt."""
+        """Strategic thesis generation with Thinking mode enabled."""
         prompt = prompts.JUDGMENT_2_PROMPT.format(
             tweet=tweet, context=context, actions=actions
         )
-        # Use Gemini 2.5 Flash for strategic analysis (supports thinking mode via parameters)
-        # The thinking is built into 2.5 Flash via the thinking_level configuration.
-        response = self.generate(prompt, temperature=0.5, model="gemini-2.5-flash")
+        # Use Gemini 2.5 Flash with explicit Thinking budget for deep reasoning
+        response = self.generate(
+            prompt, 
+            temperature=0.5, 
+            model=self.thinking_model,  # gemini-2.5-flash
+            thinking_budget=4096  # Enable deep thinking
+        )
+        
+        # Log thinking tokens if available
+        if response.thoughts_token_count:
+            print(f"[Thinking] Model used {response.thoughts_token_count} tokens for reasoning.")
+        
         import json
         try:
             content = response.content.strip()

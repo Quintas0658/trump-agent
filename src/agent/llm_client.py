@@ -107,7 +107,7 @@ ENTITIES:"""
         response = self.generate(
             prompt, 
             temperature=0.7,  # Thinking models can handle creativity
-            model="gemini-2.0-flash-thinking-exp-01-21"
+            model="gemini-2.0-flash-thinking-exp-1219"
         )
         import json
         try:

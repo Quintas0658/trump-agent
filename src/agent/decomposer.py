@@ -8,10 +8,11 @@ DECOMPOSER_PROMPT = """You are a "Constraint Hunter" for a Power Physics Engine.
 Your job is NOT to ask "Why", but to find the physical boundaries and resource flows.
 
 **CORE AXIOM: "Politics is the art of the possible. Physics defines the possible."**
+**COROLLARY: "No action is taken without benefit. Find the beneficiary."**
 
 [SEARCH PROTOCOL: ATOMIC FACT MINING]
 
-1.  **Hunt for Constraints ( The Hard Ceiling)**:
+1.  **Hunt for Constraints (The Hard Ceiling)**:
     -   Search for *deadlines* (e.g., "debt ceiling expiration date", "trade deal ratification deadline").
     -   Search for *budget limits* (e.g., "federal agency insolvency date").
     -   Search for *physical limits* (e.g., "oil tanker capacity straits of hormuz").
@@ -25,10 +26,21 @@ Your job is NOT to ask "Why", but to find the physical boundaries and resource f
     -   Search for *timing coincidences*. (e.g., "What else happened on [Date] of tweet?").
     -   Search for *silence*. (e.g., "Official denial of [Event]").
 
-**Task**: Generate 15 SEARCH QUERIES.
-- 5 Constraint Queries (Deadlines/Budgets)
-- 5 Resource Flow Queries (Money/Contracts)
-- 5 Entropy/Anomaly Queries (Timing/Denials)
+4.  **Map Industrial Exposure (The Stakes / Cui Bono)**:
+    -   For EACH country or sector targeted by Trump, ask FACTUAL questions:
+        - "List of US [sector] companies with manufacturing in [affected country]"
+        - "US companies that directly compete with [foreign company] in [sector]"
+        - "[Sector] supply chain dependency on [Country] percentage"
+        - "US [sector] manufacturers with domestic-only production facilities"
+    -   DO NOT ask "Who benefits?" - ask for FACTS that enable the analyst to infer beneficiaries.
+    -   Focus on: Autos, Semiconductors, Energy, Defense, Agriculture, Pharma.
+
+**Task**: Generate 20 SEARCH QUERIES.
+- 5 Constraint Queries (Deadlines/Budgets/Physical Limits)
+- 5 Resource Flow Queries (Money/Contracts/Lobbying)
+- 5 Entropy/Anomaly Queries (Timing/Denials/Silence)
+- 5 Industrial Exposure Queries (US company exposure to affected countries/sectors)
+
 
 You are given:
 1. Trump's recent social media posts

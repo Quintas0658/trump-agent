@@ -664,10 +664,16 @@ Structure your response as:
 - **表面 (The Noise)**: [简述他说了什么]
 - **里子 (The Signal)**: [深挖。**如果有具体公司/利益集团（如 Coupang, Greenoaks），必须点名！** 不要只谈政治逻辑，要谈商业逻辑。]
 
+🎯 **Cui Bono (谁受益？)**:
+- **受损方**: [列出具体受损的公司/行业，基于搜索结果]
+- **受益方**: [列出因此受益的竞争对手/替代方]
+- **动机推断**: [受益方与 Trump 有什么关联？游说记录？红州工厂？捐款？]
+
 💰 **投资要点**:
-- Long: [ticker]
-- Short: [ticker]
+- Long: [ticker] - 理由：[与受益方分析挂钩]
+- Short: [ticker] - 理由：[与受损方分析挂钩]
 - Watch: [ticker]
+
 
 ---
 

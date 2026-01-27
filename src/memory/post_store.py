@@ -1,8 +1,9 @@
-"""Post store - Storage for Trump posts and daily reports (Memory persistence layer)."""
+"""Post storage - Supabase-backed store for Trump posts."""
 
-from datetime import datetime, timedelta, date
+from datetime import datetime, date, timedelta
 from typing import Optional, List, Dict, Any
-from supabase import Client, create_client
+from supabase import create_client, Client
+from src.memory.event_store import parse_iso_datetime  # Robust ISO parser
 
 from src.config import config
 
@@ -79,6 +80,27 @@ class PostStore:
                 continue
         
         return saved_count
+
+    async def get_last_fetch_time(self) -> datetime | None:
+        """Get the timestamp of the most recent fetch (fetched_at columns)."""
+        if not self.client:
+            return None
+        try:
+            # We query the most recent 'fetched_at'
+            response = self.client.table("trump_posts") \
+                .select("fetched_at") \
+                .order("fetched_at", desc=True) \
+                .limit(1) \
+                .execute()
+            
+            if response.data:
+                # Parse timestamp using robust parser that handles various formats
+                iso_str = response.data[0]['fetched_at']
+                return parse_iso_datetime(iso_str)
+            return None
+        except Exception as e:
+            print(f"[!] Warning: Could not check last fetch time: {e}")
+            return None
     
     def get_posts_in_range(self, start_date: date, end_date: date, limit: int = 100) -> List[Dict]:
         """Get posts within a date range."""

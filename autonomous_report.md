@@ -1,0 +1,1 @@
+Michelle Davis's campaign raised $24,700 in contributions and spent $36,827 in the 2024 election. I need to dig deeper to find out who the major donors were. I will use Transparency USA to find the top contributors.

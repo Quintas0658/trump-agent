@@ -1,6 +1,7 @@
 """Gemini LLM client - Wrapper for Google Cloud Vertex AI using new GenAI SDK."""
 
 import os
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -10,6 +11,10 @@ from google.genai.types import GenerateContentConfig, ThinkingConfig
 
 from src.config import config
 from src.agent import prompts
+
+# Retry settings for network errors
+MAX_RETRIES = 3
+RETRY_DELAYS = [2, 4, 8]  # Exponential backoff: 2s, 4s, 8s
 
 
 @dataclass
@@ -28,11 +33,11 @@ class GeminiClient:
     Uses gemini-2.5-flash with Thinking mode for deep strategic analysis.
     """
     
-    def __init__(self, project_id: str = "trump-analyst", location: str = "us-central1"):
+    def __init__(self, project_id: str = "trump-analyst", location: str = "global"):
         self.project_id = project_id
         self.location = location
         self.model_name = "gemini-2.0-flash"  # Default for fast operations
-        self.thinking_model = "gemini-2.5-flash"  # For deep analysis with Thinking
+        self.thinking_model = "gemini-3-pro-preview"  # Deep Think mode for strategic analysis
         
         # Initialize new GenAI client with Vertex AI
         os.environ["GOOGLE_CLOUD_PROJECT"] = self.project_id
@@ -154,42 +159,59 @@ class GeminiClient:
         if tools:
             config_kwargs["tools"] = [tools]
         
-        try:
-            response = self.client.models.generate_content(
-                model=active_model,
-                contents=contents,
-                config=GenerateContentConfig(**config_kwargs),
-            )
-            
-            # Check for function call in response
-            function_call = None
-            content_text = ""
-            
-            if response.candidates and response.candidates[0].content.parts:
-                for part in response.candidates[0].content.parts:
-                    if hasattr(part, 'function_call') and part.function_call:
-                        function_call = part.function_call
-                    elif hasattr(part, 'text') and part.text:
-                        content_text += part.text
-            
-            # Extract thinking tokens
-            thoughts_tokens = None
-            if hasattr(response, 'usage_metadata') and hasattr(response.usage_metadata, 'thoughts_token_count'):
-                thoughts_tokens = response.usage_metadata.thoughts_token_count
-            
-            return LLMResponse(
-                content=content_text,
-                model=active_model,
-                usage={
-                    "prompt_tokens": response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') else None,
-                    "completion_tokens": response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') else None,
-                },
-                thoughts_token_count=thoughts_tokens,
-                function_call=function_call,
-            )
-            
-        except Exception as e:
-            raise RuntimeError(f"Vertex AI (tools) error: {e}") from e
+        # Retry loop for network errors
+        last_error = None
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                response = self.client.models.generate_content(
+                    model=active_model,
+                    contents=contents,
+                    config=GenerateContentConfig(**config_kwargs),
+                )
+                
+                # Check for function call in response
+                function_call = None
+                content_text = ""
+                
+                if response.candidates and response.candidates[0].content.parts:
+                    for part in response.candidates[0].content.parts:
+                        if hasattr(part, 'function_call') and part.function_call:
+                            function_call = part.function_call
+                        elif hasattr(part, 'text') and part.text:
+                            content_text += part.text
+                
+                # Extract thinking tokens
+                thoughts_tokens = None
+                if hasattr(response, 'usage_metadata') and hasattr(response.usage_metadata, 'thoughts_token_count'):
+                    thoughts_tokens = response.usage_metadata.thoughts_token_count
+                
+                return LLMResponse(
+                    content=content_text,
+                    model=active_model,
+                    usage={
+                        "prompt_tokens": response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') else None,
+                        "completion_tokens": response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') else None,
+                    },
+                    thoughts_token_count=thoughts_tokens,
+                    function_call=function_call,
+                )
+                
+            except Exception as e:
+                last_error = e
+                error_msg = str(e).lower()
+                
+                # Check if this is a retriable network error
+                if "disconnected" in error_msg or "connection" in error_msg or "timeout" in error_msg:
+                    if attempt < MAX_RETRIES:
+                        delay = RETRY_DELAYS[attempt]
+                        print(f"[!] Network error (attempt {attempt + 1}/{MAX_RETRIES + 1}), retrying in {delay}s...")
+                        time.sleep(delay)
+                        continue
+                
+                # Non-retriable error or max retries reached
+                break
+        
+        raise RuntimeError(f"Vertex AI (tools) error after {MAX_RETRIES + 1} attempts: {last_error}") from last_error
     
     def extract_entities(self, text: str) -> list[str]:
         """Extract key entities from text."""

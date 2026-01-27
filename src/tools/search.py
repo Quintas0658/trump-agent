@@ -25,18 +25,67 @@ class SearchResponse:
     
 
 class SearchTool:
-    """Web search using Tavily API with parallel query support."""
+    """Web search using Tavily API with parallel query support and key rotation."""
     
-    def __init__(self, api_key: Optional[str] = None):
-        api_key = api_key or config.TAVILY_API_KEY
-        if not api_key:
+    def __init__(self, api_keys: list[str] = None):
+        """Initialize with one or more API keys for rotation.
+        
+        Args:
+            api_keys: List of API keys. If None, reads from:
+                      1. TAVILY_API_KEYS (comma-separated)
+                      2. TAVILY_API_KEY (single key, fallback)
+        """
+        import os
+        
+        if api_keys:
+            self.api_keys = api_keys
+        else:
+            # Try comma-separated keys first
+            keys_str = os.getenv("TAVILY_API_KEYS", "")
+            if keys_str:
+                self.api_keys = [k.strip() for k in keys_str.split(",") if k.strip()]
+            else:
+                # Fallback to single key
+                single_key = config.TAVILY_API_KEY
+                self.api_keys = [single_key] if single_key else []
+        
+        self.current_key_index = 0
+        self.exhausted_keys = set()  # Track keys that hit quota
+        
+        if not self.api_keys:
             self.client = None
             print("[!] Tavily API key missing. Search tool operating in MOCK mode.")
         else:
-            self.client = TavilyClient(api_key=api_key)
+            self.client = TavilyClient(api_key=self.api_keys[0])
+            print(f"[Tavily] Initialized with {len(self.api_keys)} API key(s)")
     
-    def search(self, query: str, max_results: int = 5) -> SearchResponse:
-        """Execute a single search query."""
+    def _rotate_key(self) -> bool:
+        """Rotate to the next available API key.
+        
+        Returns:
+            True if rotation successful, False if all keys exhausted
+        """
+        self.exhausted_keys.add(self.current_key_index)
+        
+        # Find next non-exhausted key
+        for i in range(len(self.api_keys)):
+            if i not in self.exhausted_keys:
+                self.current_key_index = i
+                self.client = TavilyClient(api_key=self.api_keys[i])
+                print(f"[Tavily] Rotated to key #{i + 1}/{len(self.api_keys)}")
+                return True
+        
+        print("[!] All Tavily API keys exhausted!")
+        return False
+    
+    def search(self, query: str, max_results: int = 5, deep: bool = False) -> SearchResponse:
+        """Execute a single search query with automatic key rotation on quota limit.
+        
+        Args:
+            query: Search query string
+            max_results: Number of results to return (default 5)
+            deep: If True, use advanced search and include AI answer
+        """
         if not self.client:
             return SearchResponse(query=query, results=[
                 SearchResult(title=f"Mock result for {query}", url="https://example.com", content=f"This is a mock search result for {query}. It contains some text about Trump and his policies.", score=0.9)
@@ -45,8 +94,10 @@ class SearchTool:
         try:
             response = self.client.search(
                 query=query,
-                search_depth="advanced",
+                search_depth="advanced",  # Always use advanced for better results
                 max_results=max_results,
+                include_answer=True,  # Get AI-summarized answer
+                include_raw_content=deep,  # Only for deep dives
             )
             
             results = [
@@ -59,8 +110,26 @@ class SearchTool:
                 for r in response.get("results", [])
             ]
             
+            # Prepend AI answer as first result if available
+            if response.get("answer"):
+                results.insert(0, SearchResult(
+                    title="[Tavily AI Summary]",
+                    url="",
+                    content=response["answer"],
+                    score=1.0,
+                ))
+            
             return SearchResponse(query=query, results=results)
         except Exception as e:
+            error_msg = str(e).lower()
+            
+            # Check if it's a quota/usage limit error
+            if "usage limit" in error_msg or "quota" in error_msg or "rate limit" in error_msg:
+                print(f"[!] Key #{self.current_key_index + 1} quota exceeded, attempting rotation...")
+                if self._rotate_key():
+                    # Retry with new key
+                    return self.search(query, max_results)
+            
             print(f"[!] Search failed for '{query}': {e}")
             # Return empty results on failure instead of crashing
             return SearchResponse(query=query, results=[])

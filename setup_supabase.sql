@@ -90,3 +90,18 @@ CREATE TABLE IF NOT EXISTS daily_reports (
 );
 
 CREATE INDEX IF NOT EXISTS idx_reports_date ON daily_reports(report_date DESC);
+
+-- 7. EMAIL_SOURCES: Politico Playbook & Inner Circle Emails
+CREATE TABLE IF NOT EXISTS email_sources (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    received_at TIMESTAMPTZ NOT NULL,
+    sender TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    body_text TEXT NOT NULL,
+    summary TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    metadata JSONB DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_emails_received ON email_sources(received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_emails_sender ON email_sources(sender);

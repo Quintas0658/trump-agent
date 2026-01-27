@@ -21,6 +21,12 @@ class Config:
     
     # LLM
     GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
+
+    # Email Ingestion
+    EMAIL_IMAP_SERVER: str = os.getenv("EMAIL_IMAP_SERVER", "imap.gmail.com")
+    EMAIL_USER: str = os.getenv("EMAIL_USER", "")
+    EMAIL_PASSWORD: str = os.getenv("EMAIL_PASSWORD", "")
+    EMAIL_FOLDER: str = os.getenv("EMAIL_FOLDER", "INBOX")
     
     # Agent Settings
     MAX_SEARCH_LOOPS: int = 3

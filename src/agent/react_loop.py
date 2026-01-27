@@ -41,12 +41,13 @@ class ReActLoop:
         self.tools = get_agent_tools()
         self.history: List[ReActStep] = []
     
-    async def run(self, initial_prompt: str, thinking_budget: int = 8192) -> str:
+    async def run(self, initial_prompt: str, thinking_budget: int = 8192, max_tokens: int = 16384) -> str:
         """Run the ReAct loop until completion or max iterations.
         
         Args:
             initial_prompt: The initial analysis prompt
             thinking_budget: Token budget for thinking (Gemini 2.5)
+            max_tokens: Max output tokens (must be > thinking_budget for full response)
             
         Returns:
             Final analysis content
@@ -68,6 +69,7 @@ class ReActLoop:
                 messages=conversation,
                 tools=self.tools,
                 thinking_budget=thinking_budget,
+                max_tokens=max_tokens,
             )
             
             # Check if response contains a function call
@@ -153,6 +155,7 @@ async def run_react_analysis(
     prompt: str,
     max_iterations: int = 5,
     thinking_budget: int = 8192,
+    max_tokens: int = 16384,
     verbose: bool = True
 ) -> str:
     """Convenience function to run a ReAct analysis.
@@ -163,6 +166,7 @@ async def run_react_analysis(
         prompt: The analysis prompt
         max_iterations: Max tool calls before stopping
         thinking_budget: Token budget for thinking
+        max_tokens: Max output tokens (should be > thinking_budget)
         verbose: Print progress
         
     Returns:
@@ -175,7 +179,7 @@ async def run_react_analysis(
         verbose=verbose
     )
     
-    result = await loop.run(prompt, thinking_budget=thinking_budget)
+    result = await loop.run(prompt, thinking_budget=thinking_budget, max_tokens=max_tokens)
     
     if verbose:
         print(f"\n[ReAct] Trace: {loop.get_trace()}")

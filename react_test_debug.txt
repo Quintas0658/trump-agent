@@ -1,0 +1,160 @@
+============================================================
+REACT AGENT TEST: Autonomous Tool Calling
+============================================================
+[Tavily] Initialized with 2 API key(s)
+[*] Client initialized: gemini-3-pro-preview
+[*] Memory store: PostStore
+[*] Search tool: Tavily
+[*] Tool Executor created with 3 tools
+[*] Fetching posts from the last 48 hours...
+[*] Data is fresh (fetched 8 mins ago). Skipping Apify.
+[*] Loaded 28 posts from Supabase cache.
+[*] Returning 27 posts for analysis.
+[*] Saved 27 posts to Supabase
+
+============================================================
+PHASE 1: DETERMINISTIC CONTEXT GATHERING (DATA FUSION)
+============================================================
+[Context] Step 0: Loading active hotspots from world_facts...
+[Hotspots] Found 4 active regions: ['ASIA', 'GLOBAL', 'DOMESTIC', 'MENA']
+[Context] Loaded 7 events from 4 regions
+[Context] Fetching Politico Briefings (to inform search query generation)...
+[*] Searching emails since: 25-Jan-2026
+[*] Found 5 emails from Politico today.
+[*] Skipping duplicate email: A storm is brewing
+[*] Skipping duplicate email: A nation on thin ice
+[*] Skipping duplicate email: Inside the GOP anxiety on Minnesota
+[*] Skipping duplicate email: Trump makes a shift in Minnesota
+[*] Skipping duplicate email: Bye-bye Bovino
+[Context] Found 5 Politico emails.
+[Context] Asking Gemini to generate targeted search queries (Process-aware)...
+[Context] Generated 10 LLM queries: ['Alex Pretti Minneapolis VA hospital background', 'South Korea trade agreement legislature opposition 2026', 'gold price reaction to geopolitical tensions January 27 2026', 'Minnesota protests origin welfare fraud investigation', 'Tim Walz response Tom Homan appointment Minneapolis', 'Ayatollah Khamenei health status January 2026', 'Kristi Noem Greg Bovino relationship DHS 2026', 'Iranian reaction USS Abraham Lincoln deployment 2026', 'Indiana redistricting vote impact US Congress 2026', 'Venezuela political prisoner release motivations 2026']
+[Hotspots] Generated 10 targeted queries: ['Alex Pretti 37yearold ICU fatally latest update', 'USS Abraham Lincoln carrier strike latest update', 'Middle East major news last 24h', 'USA Domestic major news last 24h', 'Large protests erupted Minneapolis across latest update', 'President Trump announced increase tariffs latest update', 'Iranian Supreme Leader Ayatollah Khamenei latest update', 'Spot prices reached alltime 507021 latest update', 'International Geopolitics major news last 24h', 'Asia Pacific major news last 24h']
+[Context] Added 10 hotspot queries: ['Alex Pretti 37yearold ICU fatally latest update', 'USS Abraham Lincoln carrier strike latest update', 'Middle East major news last 24h', 'USA Domestic major news last 24h', 'Large protests erupted Minneapolis across latest update', 'President Trump announced increase tariffs latest update', 'Iranian Supreme Leader Ayatollah Khamenei latest update', 'Spot prices reached alltime 507021 latest update', 'International Geopolitics major news last 24h', 'Asia Pacific major news last 24h']
+[Context] Added Axios fallback query for quality baseline.
+[Context] Total queries: 21
+[Context] Executing parallel searches (Tavily)...
+[*] Compressing context from 38184 to 8000 chars
+[*] Gathered 8039 chars of initial context.
+
+============================================================
+PHASE 2: MULTI-AGENT DEEP INVESTIGATION (GPT-4o + Tavily)
+============================================================
+[Decomposer] Asking GPT-4o to generate investigative questions...
+[Decomposer] Generated 20 questions (extracted)
+[Deep Dig] GPT-4o generated 15 investigative questions
+  Q1: What are the specific deadlines for the Korean legislature to ratify the trade a...
+  Q2: What is the budget allocation for the Trump administration's response to the Min...
+  Q3: What are the capacity limits of the US Navy ships currently positioned in the Mi...
+  Q4: What is the deadline for the current US debt ceiling, and what are the implicati...
+  Q5: What are the physical constraints on the US oil supply chain related to the Stra...
+  ... and 10 more
+[Investigator] Starting parallel investigation of 15 questions...
+[Investigator] Completed: 15/15 questions with results
+[Deep Dig] Investigation complete: 15356 chars of findings
+
+============================================================
+PHASE 2.5: SHADOW INVESTIGATION (Recursive Entity Hunting)
+============================================================
+[Shadow Investigator] Scanning for shadow entities...
+[Shadow Investigator] Generated 5 follow-up queries: ["Identify the major tech company involved in US Navy's Middle East operations January 2026", 'Details on senior officials negotiating US debt ceiling extension 2026', 'Names of lobbying groups advocating for increased South Korean tariffs 2026', "Identify the US investors involved in South Korea's capital flight January 2026", "Names of pharmaceutical companies involved in South Korea's lobbying disclosures 2025"]
+[Shadow Investigator] executing 5 deep dive searches...
+[Shadow Investigator] Uncovered 5 new data points.
+[*] Context enriched with Shadow Findings. New size: 17264 chars
+[*] Prompt built (50398 chars)
+
+============================================================
+STARTING REACT LOOP
+============================================================
+
+[ReAct] Starting loop (max 5 iterations)
+
+[ReAct] Iteration 1/5
+
+------------------------------
+[Agent Intelligence - THINKING]
+------------------------------
+**Refining Strategic Market Plays**
+
+I've been drilling down on the market impacts, particularly the short opportunities in South Korean assets like the won and automakers, while also pinpointing potential long positions in US pharma (Eli Lilly) due to the tariff dynamics. The Minnesota situation and the potential for federal intervention are also ripe for opportunities. Additionally, I'm now crafting the "Executive Summary" focusing on the Korea tariff shock, the domestic political maneuvers, and the inflation risk as key factors.
+
+
+
+------------------------------
+
+[ReAct] Final answer received (4877 chars)
+
+[ReAct] Trace: [{'step': 1, 'type': 'final_answer', 'tool': None, 'content_preview': '# 🦈 首席策略师深夜备忘录 (January 27, 2026)\n\n## 📊 30秒速读 (Executive Summary)\n- **今日主线**: **"勒索外交"与"内部清洗"同步进行**。'}]
+
+============================================================
+REACT ANALYSIS COMPLETE
+============================================================
+
+============================================================
+PHASE 4: GATEKEEPER CRITIQUE
+============================================================
+[Gatekeeper] Assessment: This is a strong, actionable memo that presents a coherent, albeit conspiratorial, narrative, but it relies on several assumptions and lacks depth in key areas, particularly concerning the motivations and leverage points in the 'internal cleansing'pillar.
+[Gatekeeper] Found 5 weak points
+  - [MODERATE] 戰線一: 韩国关税突袭 (The K-Pop Shakedown): The connection between Trump's actions and specific US private equity firms like...
+  - [MODERATE] 戰線二: 明尼苏达叙事翻转 (The Narrative Heist): While the narrative shift from 'police brutality' to 'welfare fraud' is plausibl...
+  - [MODERATE] 戰線三: 党内大清洗 (The RINO Purge): The rationale for targeting Jim Buck and Greg Walker in Indiana is vague. The me...
+  - [MODERATE] 戰线三: 党内大清洗 (The RINO Purge): While the analysis correctly identifies Thomas Massie's fiscal conservatism, it ...
+  - [MODERATE] 🔮 接下来的剧本 (Next 48h): The predictions are asserted without sufficiently explaining the *triggering mec...
+
+[Deep Scout] Executing 14 targeted searches...
+[Deep Scout] Retrieved 10000 chars of new intel.
+
+[Editor] Synthesizing final report...
+[Editor] Final report ready.
+
+[Knowledge Accumulation] Extracting facts from search results...
+[Facts] Extracted 3 candidates from search results
+[Facts] merged into existing event 340a1d1d-fa36-4440-a492-f81144da3693
+[Facts] merged into existing event 0824dc38-4b4d-471e-b92d-6d03a91b9b81
+[Facts] Stored NEW: South Korea responded to President Trump's announc...
+[Facts] Completed. New: 1, Merged: 2
+[Knowledge Accumulation] 1 new facts added to world_facts
+[Memory] Generating high-density summary for long-term storage...
+[*] Report saved to Supabase: ef8d1748-91af-4b60-8d9a-5dc2d6ecb3a8 (Memory Compressed)
+[*] Result saved to react_analysis.md
+
+------------------------------------------------------------
+ANALYSIS PREVIEW:
+------------------------------------------------------------
+```markdown
+# 🦈 首席策略师深夜备忘录 (January 27, 2026)
+
+## 📊 30秒速读 (Executive Summary)
+- **今日主线**: **"勒索外交"与"内部清洗"同步进行**。对外，利用韩国立法机构的拖延作为借口，启动 25% 关税以强迫资本回流（FDI）；对内，通过清洗印第安纳州和肯塔基州的党内异见者（RINO/Massie），为 2026 年中期的债务上限和预算案扫清障碍。
+- **最大风险**: **明尼苏达州的联邦接管**。将"联邦特工枪杀护士"的危机转化为"调查福利欺诈"，这是一种高风险的叙事翻转。如果失败，内乱将升级。
+- **最佳交易**: **Short EWY (South Korea ETF)** - 关税大棒已落下，且针对的是汽车和医药核心产业.
+
+---
+
+## 🚨 核心博弈 (The Real Game)
+📌 **他在制造"人为危机"以绕过制度约束。**
+
+Trump 正在运用一种经典的"休克疗法"：
+1.  **制造痛点**：突然宣布韩国关税（经济痛点）和联邦接管明尼苏达（主权痛点）。
+2.  **指鹿为马**：将明尼苏达的抗议（起因是联邦特工杀人）重新定义为"反击福利欺诈"。
+3.  **清除路障**：利用这些危机带来的政治资本，定点清除 Thomas Massie（财政鹰派）和印第安纳州阻碍重划选区（Gerrymandering）的议员。
+**他在为 2026 年下半年的绝对权力铺路，确保国会没有任何刹车机制。**
+
+---
+
+## 1. 战线一: 韩国关税突袭 (The K-Pop Shakedown)
+📌 **借口立法延迟，实则强迫财阀（Chaebols）向美国私募基金输血。**
+
+- **表面 (The Noise)**: Trump 抱怨韩国国会未批准 2025 年 7 月的贸易协议，宣布将汽车、木材、医药关税从 15% 提至 25%。
+- **里子 (The Signal)**: 这不是关于贸易逆差，这是关于**资本结构**。
+    - **Shadow Intel**: 美国激进投资者（如 **Green Oaks Capital**, **Altimeter Capital**）一直在游说打破韩国财阀的交叉持股结构（即所谓的"Korea Discount"）。However, direct lobbying efforts related to chaebol reform are unsubstantiated; instead, Greenoaks and Altimeter have focused on a trade dispute concerning alleged discriminatory practices against Coupang, a US company operating in South Korea.
+    - Trump 的关税大棒名为"贸易"，实则是配合华尔街资本逼迫 Samsung、Hyundai 等巨头分拆业务或增加对美派息/回购。 This connection is now more nuanced. While direct influence on Chaebol structure is lacking, the overall trade tensions can still create an environment where US firms may be able to exert influence.
+    - 特别提到的 **"Pharma" (医药)** 是关键。韩国生物制药（Samsung Biologics, Celltrion）正在全球扩张，Trump 要么想把产能逼到印第安纳（Eli Lilly 大本营），要么想通过关税压低其估值以便美资抄底。
+
+🎯 **Cui Bono (谁受益？)**:
+- **受损方**: **Hyundai/Kia** (汽车关税致命), **Samsung Biologics** (医药关税), **SK Hynix**.
+- **受益方**: **Eli Lilly (LLY)** (印第安纳州制药巨头，竞争对手受挫), **Ford/GM** (短期价格保护), **US Private Equity** (抄底韩国资产 - *indirectly, through broader economic pressure*).
+- **动机推断**: 印第安纳州是 Trump 今天的政治焦点（见下文战线三），保护该州核心产业（制药/农业）是典型的利益交换。
+
+💰 **投资要点**:
+- **Short**: **EWY (...

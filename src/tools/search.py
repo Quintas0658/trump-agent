@@ -78,13 +78,20 @@ class SearchTool:
         print("[!] All Tavily API keys exhausted!")
         return False
     
-    def search(self, query: str, max_results: int = 5, deep: bool = False) -> SearchResponse:
+    def search(
+        self, 
+        query: str, 
+        max_results: int = 5, 
+        deep: bool = False,
+        include_domains: list[str] = None
+    ) -> SearchResponse:
         """Execute a single search query with automatic key rotation on quota limit.
         
         Args:
             query: Search query string
             max_results: Number of results to return (default 5)
             deep: If True, use advanced search and include AI answer
+            include_domains: Optional list of domains to prioritize (e.g., ["axios.com"])
         """
         if not self.client:
             return SearchResponse(query=query, results=[
@@ -92,13 +99,20 @@ class SearchTool:
             ])
         
         try:
-            response = self.client.search(
-                query=query,
-                search_depth="advanced",  # Always use advanced for better results
-                max_results=max_results,
-                include_answer=True,  # Get AI-summarized answer
-                include_raw_content=deep,  # Only for deep dives
-            )
+            # Build search kwargs
+            search_kwargs = {
+                "query": query,
+                "search_depth": "advanced",  # Always use advanced for better results
+                "max_results": max_results,
+                "include_answer": True,  # Get AI-summarized answer
+                "include_raw_content": deep,  # Only for deep dives
+            }
+            
+            # Add domain filter if provided
+            if include_domains:
+                search_kwargs["include_domains"] = include_domains
+            
+            response = self.client.search(**search_kwargs)
             
             results = [
                 SearchResult(
@@ -128,7 +142,7 @@ class SearchTool:
                 print(f"[!] Key #{self.current_key_index + 1} quota exceeded, attempting rotation...")
                 if self._rotate_key():
                     # Retry with new key
-                    return self.search(query, max_results)
+                    return self.search(query, max_results, deep, include_domains)
             
             print(f"[!] Search failed for '{query}': {e}")
             # Return empty results on failure instead of crashing
@@ -137,7 +151,8 @@ class SearchTool:
     async def parallel_search(
         self, 
         queries: list[str], 
-        max_results_per_query: int = 3
+        max_results_per_query: int = 3,
+        include_domains: list[str] = None
     ) -> list[SearchResponse]:
         """Execute multiple search queries in parallel.
         
@@ -148,7 +163,7 @@ class SearchTool:
             loop = asyncio.get_event_loop()
             return await loop.run_in_executor(
                 None, 
-                lambda: self.search(query, max_results_per_query)
+                lambda: self.search(query, max_results_per_query, include_domains=include_domains)
             )
         
         tasks = [search_async(q) for q in queries]

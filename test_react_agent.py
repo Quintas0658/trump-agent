@@ -21,9 +21,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.'))
 
 from src.agent.llm_client import get_gemini_client
 from src.input.truth_social import TruthSocialScraper, MockTruthSocialScraper, TruthPost
-from src.tools.search import SearchTool
-from src.memory.post_store import PostStore
-from src.agent.tool_executor import create_tool_executor
+from src.agent.gatekeeper import run_gatekeeper_loop
+from src.agent.judgments import JudgmentEngine
+from src.agent.knowledge_accumulation import extract_and_store_facts
+from src.tools.email_sender import send_daily_report
 from src.agent.react_loop import run_react_analysis
 
 # Multi-Agent Deep Digging imports
@@ -34,6 +35,14 @@ try:
 except ImportError as e:
     print(f"[!] Multi-agent modules not available: {e}")
     MULTI_AGENT_ENABLED = False
+
+# Gatekeeper (Strategic Depth) imports
+try:
+    from src.agent.gatekeeper import run_gatekeeper_loop
+    GATEKEEPER_ENABLED = True
+except ImportError as e:
+    print(f"[!] Gatekeeper module not available: {e}")
+    GATEKEEPER_ENABLED = False
 
 load_dotenv()
 
@@ -88,56 +97,78 @@ def get_active_hotspots(days: int = 7) -> dict:
 
 
 def generate_hotspot_queries(hotspots: dict) -> list:
-    """Generate search queries for each active hotspot region.
+    """Generate specific search queries based on active hotspot events.
     
     Args:
         hotspots: {region: [event_summaries]}
         
     Returns:
-        list: Search queries like "Iran crisis latest 24h January 2026"
+        list: Targeted search queries like "Iran Supreme Leader bunker details"
     """
-    region_keywords = {
-        "MENA": "Iran Middle East",
-        "LATAM": "Venezuela Latin America",
-        "EUROPE": "Europe EU NATO",
-        "ASIA": "China Korea Asia",
-        "GLOBAL": "UN international",
-        "DOMESTIC": "US domestic federal"
+    import re
+    
+    # Base region keywords for fallback
+    region_map = {
+        "MENA": "Middle East",
+        "LATAM": "Venezuela Latin America", 
+        "EUROPE": "Europe",
+        "ASIA": "Asia Pacific",
+        "GLOBAL": "International Geopolitics",
+        "DOMESTIC": "USA Domestic"
     }
-    
-    queries = []
-    # Use specific 2-day date range for better search results
+
+    queries = set()
     today = datetime.now()
-    yesterday = today - timedelta(days=1)
-    date_range = f"{yesterday.strftime('%B %d')}-{today.strftime('%d %Y')}"  # e.g., "January 26-27 2026"
+    date_str = today.strftime('%Y') # Just year, let Tavily handle freshness
     
-    for region in hotspots.keys():
-        keywords = region_keywords.get(region, region)
-        query = f"{keywords} news {date_range}"
-        queries.append(query)
+    for region, summaries in hotspots.items():
+        # 1. Add a broad regional query
+        region_name = region_map.get(region, region)
+        queries.add(f"{region_name} major news last 24h")
+        
+        # 2. Extract key topics from top 3 summaries per region
+        # Logic: If we have specific memory of an event, we should verify its current status
+        for summary in summaries[:3]:
+            # Simple keyword extraction (naive but effective)
+            # e.g. "Iran Supreme Leader moved to bunker" -> "Iran Supreme Leader bunker"
+            # We strip stop words and keep Proper Nouns + key verbs
+            clean_summary = re.sub(r'[^\w\s]', '', summary)
+            words = clean_summary.split()
+            # Heuristic: Keep capitalized words (Entities) and length > 4 (significant)
+            keywords = [w for w in words if w[0].isupper() or len(w) > 5]
+            
+            if len(keywords) > 2:
+                topic_query = f"{' '.join(keywords[:5])} latest update"
+                queries.add(topic_query)
     
-    return queries
+    # Deduplicate and return list
+    final_queries = list(queries)
+    print(f"[Hotspots] Generated {len(final_queries)} targeted queries: {final_queries}")
+    return final_queries
 
 
 async def extract_and_store_facts(search_results: list, client) -> int:
     """Extract structured facts from Tavily results and store in world_facts.
     
-    Args:
-        search_results: List of SearchResult objects from Tavily
-        client: GeminiClient for LLM extraction
-        
-    Returns:
-        int: Number of facts stored
+    Implements 'Smart Ingestion' (World Facts 2.0):
+    1. Extracts canonical events with topic tags.
+    2. Checks existing events on the SAME DATE + TOPIC.
+    3. Uses LLM to check for semantic duplication.
+    4. Aggregates source URLs if duplicate found.
     """
     import json
     from supabase import create_client
     
     # 1. Combine search results into text
     combined_text = ""
+    source_map = {} # content_snippet -> source_url
+    
     for res in search_results:
         for item in res.results:
-            combined_text += f"[{res.query}] {item.title}: {item.content}\n"
-    
+            snippet = f"[{res.query}] {item.title}: {item.content}"
+            combined_text += snippet + "\n"
+            source_map[item.title[:20]] = item.url # Simple mapping for now
+            
     if len(combined_text) < 100:
         print("[Facts] Not enough search content to extract facts")
         return 0
@@ -148,28 +179,33 @@ async def extract_and_store_facts(search_results: list, client) -> int:
     # 2. Ask LLM to extract structured facts
     date_str = datetime.now().strftime("%Y-%m-%d")
     
-    extract_prompt = f"""You are a fact extraction system. Today is {date_str}.
-Extract VERIFIED FACTS from the news below. Only extract concrete events that happened, not opinions.
+    extract_prompt = f"""You are a Strategic Intelligence Analyst. Today is {date_str}.
+Extract UNIQUE CANONICAL EVENTS from the news below. 
+Do not extract opinions or minor updates. Focus on MAJOR developments.
 
 [News Content]
 {combined_text}
 
-[Output Format]
-Return a JSON array. Each fact must have:
-- event_date: YYYY-MM-DD format (use {date_str} if unclear)
-- event_summary: One sentence describing what happened
-- actors: Array of key actors ["Person1", "Country1"]
-- region: One of [MENA, LATAM, EUROPE, ASIA, DOMESTIC, GLOBAL]
-- event_type: One of [military_action, sanction, tariff, diplomacy, protest, policy, economic]
-- significance: One of [LOW, MEDIUM, HIGH, CRITICAL]
+[Output Requirements]
+Return a JSON array of objects. Each object must have:
+- event_date: YYYY-MM-DD (today's date unless explicitly historical)
+- event_summary: A dense, neutral summary (1-2 sentences)
+- actors: Array of key entities ["Person", "Country"]
+- region: [MENA, LATAM, EUROPE, ASIA, DOMESTIC, GLOBAL]
+- event_type: [military_action, sanction, tariff, diplomacy, protest, policy, economic]
+- significance: [LOW, MEDIUM, HIGH, CRITICAL]
+- topic_l1: One of [TRADE, MILITARY, DIPLOMATIC, DOMESTIC, ECONOMIC, OTHER]
+- topic_l2: A short, specific label (e.g. 'Korea_Tariff', 'Iran_Tension', 'Minnesota_Incident')
 
-Return ONLY valid JSON, no markdown. Extract 3-5 most important facts."""
+Return ONLY valid JSON. Extract 3-5 distinct events."""
 
     try:
+        # Use generate method which handles models internally
         if hasattr(client, 'generate'):
-            response = client.generate(extract_prompt, temperature=0.2)
+            response = client.generate(extract_prompt, temperature=0.1)
             content = response.content
         else:
+            # Fallback for raw GenAI client
             response = client.client.models.generate_content(
                 model=client.model,
                 contents=extract_prompt
@@ -182,53 +218,93 @@ Return ONLY valid JSON, no markdown. Extract 3-5 most important facts."""
         
         if not isinstance(facts, list):
             facts = [facts]
-        
-        print(f"[Facts] Extracted {len(facts)} facts from search results")
+            
+        print(f"[Facts] Extracted {len(facts)} candidates from search results")
         
     except Exception as e:
         print(f"[!] Fact extraction failed: {e}")
         return 0
     
-    # 3. Store facts in Supabase
+    # 3. Smart Storage with Semantic Deduplication
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_ANON_KEY")
     
     if not supabase_url or not supabase_key:
-        print("[!] Supabase credentials not found, skipping fact storage")
+        print("[!] Supabase credentials not found, skipping storage")
         return 0
-    
+        
     try:
         db = create_client(supabase_url, supabase_key)
         stored_count = 0
+        updated_count = 0
         
         for fact in facts:
-            # Check for duplicates (same summary on same date)
-            existing = db.table("world_facts").select("id").eq(
-                "event_summary", fact.get("event_summary", "")
+            # A. Query existing events on SAME DATE + SAME TOPIC_L2
+            # This narrows down the candidates for LLM comparison drastically
+            candidates = db.table("world_facts").select("*").eq(
+                "event_date", fact.get("event_date", date_str)
+            ).eq(
+                "topic_l2", fact.get("topic_l2", "General")
             ).execute()
             
-            if existing.data:
-                continue  # Skip duplicate
+            is_duplicate = False
+            duplicate_id = None
             
-            # Insert
-            db.table("world_facts").insert({
-                "event_date": fact.get("event_date", date_str),
-                "event_summary": fact.get("event_summary", "Unknown event"),
-                "actors": fact.get("actors", []),
-                "region": fact.get("region", "GLOBAL"),
-                "event_type": fact.get("event_type", "policy"),
-                "significance": fact.get("significance", "MEDIUM"),
-                "verified": False  # Auto-extracted, not manually verified
-            }).execute()
+            if candidates.data:
+                # B. Use LLM to check if it's the SAME EVENT semantically
+                candidate_texts = "\n".join([f"ID {c['id']}: {c['event_summary']}" for c in candidates.data])
+                dedup_prompt = f"""Compare this NEW fact with EXISTING facts from the same day and topic.
+
+NEW FACT: {fact['event_summary']}
+
+EXISTING FACTS:
+{candidate_texts}
+
+Is the NEW FACT describing the EXACT SAME core event as any of the EXISTING facts?
+- If yes, return JSON: {{"is_duplicate": true, "match_id": "ID_FROM_ABOVE"}}
+- If no (it is a distinct development or different sub-event), return: {{"is_duplicate": false}}
+
+Return ONLY JSON."""
+                
+                try:
+                    # Quick semantic check
+                    check_resp = client.generate(dedup_prompt, temperature=0.0)
+                    check_data = json.loads(check_resp.content.replace("```json", "").replace("```", "").strip())
+                    
+                    if check_data.get("is_duplicate"):
+                        is_duplicate = True
+                        duplicate_id = check_data.get("match_id")
+                except Exception as e:
+                    print(f"[!] Deduplication check failed: {e}. Assuming new event.")
             
-            stored_count += 1
-            print(f"[Facts] Stored: {fact.get('event_summary', '')[:60]}...")
+            # C. Action
+            if is_duplicate and duplicate_id:
+                # UPDATE: Aggregate source URL (placeholder logic for now)
+                print(f"[Facts] merged into existing event {duplicate_id}")
+                updated_count += 1
+                # Future: update source_urls array here
+            else:
+                # INSERT: New canonical event
+                db.table("world_facts").insert({
+                    "event_date": fact.get("event_date", date_str),
+                    "event_summary": fact.get("event_summary", "Unknown event"),
+                    "actors": fact.get("actors", []),
+                    "region": fact.get("region", "GLOBAL"),
+                    "event_type": fact.get("event_type", "policy"),
+                    "significance": fact.get("significance", "MEDIUM"),
+                    "topic_l1": fact.get("topic_l1", "OTHER"),
+                    "topic_l2": fact.get("topic_l2", "General"),
+                    "source_urls": [], # Can populate from source_map later
+                    "verified": True
+                }).execute()
+                stored_count += 1
+                print(f"[Facts] Stored NEW: {fact.get('event_summary')[:50]}...")
         
-        print(f"[Facts] Stored {stored_count} new facts to world_facts table")
+        print(f"[Facts] Completed. New: {stored_count}, Merged: {updated_count}")
         return stored_count
         
     except Exception as e:
-        print(f"[!] Fact storage failed: {e}")
+        print(f"[!] Fact storage process failed: {e}")
         return 0
 
 
@@ -456,11 +532,18 @@ async def gather_context(posts: list, client, search_tool) -> tuple:
         print(f"[Context] Added {len(hotspot_queries)} hotspot queries: {hotspot_queries}")
     
     all_queries = queries + hotspot_queries
+    
+    # 3b. [NEW - Plan B] Add Axios as a guaranteed high-quality source
+    AXIOS_FALLBACK_QUERY = "axios.com trump administration latest news"
+    all_queries.append(AXIOS_FALLBACK_QUERY)
+    print(f"[Context] Added Axios fallback query for quality baseline.")
+    
     print(f"[Context] Total queries: {len(all_queries)}")
     
     # 4. Execute parallel searches (Tavily)
     print("[Context] Executing parallel searches (Tavily)...")
-    search_results = await search_tool.parallel_search(all_queries)
+    # Prioritize axios.com for all initial searches
+    search_results = await search_tool.parallel_search(all_queries, include_domains=["axios.com"])
     
     # 5. Build context string
     context_lines = []
@@ -850,7 +933,31 @@ async def main():
         print("REACT ANALYSIS COMPLETE")
         print("=" * 60)
         
-        # 8a. [NEW] Extract and store facts from search results
+        # 8a. GATEKEEPER PHASE (Strategic Depth Reinforcement)
+        if GATEKEEPER_ENABLED:
+            def deep_dive_search(queries: list) -> str:
+                """Wrapper to run deep-dive searches (sync)."""
+                combined = ""
+                for q in queries[:5]:  # Limit to 5 queries
+                    try:
+                        # Prioritize axios.com for deep dives as well
+                        res = search_tool.search(q, include_domains=["axios.com"])
+                        for r in res.results:
+                            combined += f"[{q}] {r.title}: {r.content}\n"
+                    except Exception as e:
+                        print(f"[Deep Scout] Query '{q}' failed: {e}")
+                return combined[:10000]
+            
+            result = run_gatekeeper_loop(
+                draft_report=result,
+                original_context=initial_context[:8000],
+                search_function=deep_dive_search,
+                client=client
+            )
+        else:
+            print("[Gatekeeper] Module not enabled, skipping depth reinforcement.")
+        
+        # 8b. [NEW] Extract and store facts from search results
         print("\n[Knowledge Accumulation] Extracting facts from search results...")
         facts_stored = await extract_and_store_facts(search_results, client)
         print(f"[Knowledge Accumulation] {facts_stored} new facts added to world_facts")
@@ -867,6 +974,10 @@ async def main():
             summary=summary_text,
         )
         print(f"[*] Report saved to Supabase: {report_id} (Memory Compressed)")
+        
+        # 9. Send Email Briefing
+        print("[*] Sending email briefing...")
+        send_daily_report(result, summary=summary_text)
         
         # Save locally
         with open("react_analysis.md", "w") as f:

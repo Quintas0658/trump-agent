@@ -70,18 +70,20 @@ OUTPUT (JSON):
 
 
 # Judgment 2: Multi-Pillar Strategic Analysis
+# Judgment 2: Multi-Pillar Strategic Analysis
 JUDGMENT_2_PROMPT = """You are a Senior Strategic Analyst. Your task is to identify ALL distinct strategic themes (Intelligence Pillars) present in these signals.
 
 STATEMENT BATCH: "{tweet}"
 ACTIONS RECORDED: {actions}
 SEARCH CONTEXT: {context}
 
-YOUR GOAL: Segment these pulses into as many distinct "Intelligence Pillars" as you can identify. Do NOT limit yourself to a fixed number. For each pillar, explain the "Who", the "Why", and the "So What" for someone unfamiliar with US politics.
+YOUR GOAL: Segment these pulses into distinct "Intelligence Pillars".
+CRITICAL: Do not ignore international events (Iran, Venezuela, etc.) if they are in the context. Every major geopolitical theatre is a valid pillar.
 
 PRYING QUESTIONS FOR EACH PILLAR:
-- WHO: Who are the key players and what is their historical role?
-- WHY: Why is this happening now? What are the political stakes?
-- SO WHAT: What is the intended strategic outcome?
+- WHO: Who are the key players?
+- WHY: Why is this happening now?
+- SO WHAT: What is the strategic outcome?
 
 OUTPUT (JSON object with a list of pillars):
 {{
@@ -89,8 +91,8 @@ OUTPUT (JSON object with a list of pillars):
         {{
             "title": "Short descriptive title (e.g., 'The China-Canada Trade Warning')",
             "summary": "1-2 sentence high-level summary",
-            "strategic_context": "Deep background on players and history for this specific pillar...",
-            "causal_reasoning": "Analysis of why this is happening and the strategic intent...",
+            "strategic_context": "Deep background...",
+            "causal_reasoning": "Analysis of why this is happening...",
             "confidence": 0.X (0.0-1.0),
             "evidence": ["evidence 1", "evidence 2"],
             "competing_explanation": "A plausible alternative interpretation...",
@@ -149,19 +151,29 @@ OUTPUT (JSON):
 
 
 # Multi-Pillar Narrative generation
-NARRATIVE_PROMPT = """You are a Senior Strategic Advisor providing an intelligence briefing.
+# Multi-Pillar Narrative generation
+NARRATIVE_PROMPT = """You are a Senior Advisor explaining complex geopolitical strategy to a client who is smart but NOT an expert in US politics or finance.
 
-TASK: Take the identified "Intelligence Pillars" and write a cohesive, sophisticated briefing.
+TASK: Write a clear, accessible intelligence briefing based on the identified pillars.
 
 {pillars_data}
 
-STRUCTURE:
-1. **Executive Summary**: 1 paragraph summarizing the overall strategic posture across all pillars.
-2. **Strategic Deep Dives**: For each pillar, use the provided context and reasoning to tell a story. Explain the "inner workings". Use headers.
-3. **Synthesis**: Are there connections between these pillars? (e.g., is Trade being used as leverage for Border?)
-4. **Risk Assessment**: What is the #1 thing to watch in the next 7 days?
+STYLE GUIDELINES (CRITICAL):
+1. **Plain English**: Avoid "consultant speak". Don't say "exogenous shock", say "sudden outside event".
+2. **Explain Concepts**: If you mention a specific bill, person, or term (like "Section 232"), briefly explain WHAT it is.
+3. **Connect the Dots**: Explicitly say "This matters because..." for every point.
+4. **No Fluff**: Get straight to the point.
 
-TONE: Professional, authoritative, and explanatory. Break down complex jargon.
+STRUCTURE:
+1. **The Big Picture** (Executive Summary): One paragraph on how these stories fit together.
+2. **Deep Dives**: For each pillar, use this format:
+   - **Headline**: Catchy and descriptive.
+   - **The Surface**: What is the official news? (Simple terms)
+   - **The Reality**: What is actually happening behind the scenes?
+   - **Who Wins/Loses**: Clear winners and losers.
+   - **Why You Care**: How this affects the market or the future.
+
+3. **Risk Radar**: What specifically should we watch in the next 7 days?
 
 OUTPUT:"""
 
@@ -179,3 +191,65 @@ EXPLAIN:
 3. What additional information would help
 
 OUTPUT (2-3 paragraphs):"""
+
+
+# ============================================================================
+# GATEKEEPER & EDITOR PROMPTS (Strategic Depth Reinforcement)
+# ============================================================================
+
+GATEKEEPER_PROMPT = """You are a ruthless Senior Editor at a top-tier intelligence firm. 
+Your job is to CRITIQUE this draft strategic memo and identify its WEAK POINTS.
+
+[DRAFT REPORT]
+{draft_report}
+
+[ORIGINAL CONTEXT AVAILABLE]
+{original_context}
+
+CRITIQUE RULES:
+1. **Missing Specifics**: Is anything asserted without a specific name, date, or number? (e.g., "sources say" is weak)
+2. **Shallow Analysis**: Is any pillar just rewriting the news instead of explaining the *why* and *who benefits*?
+3. **Ignored Context**: Is there something in the ORIGINAL CONTEXT that the draft failed to mention?
+4. **Logical Gaps**: Are there any claims that don't logically follow from the evidence?
+
+For EACH significant weakness, generate 2-3 highly specific "Deep Dive Questions" that a junior analyst should research.
+
+OUTPUT (JSON):
+{{
+    "overall_assessment": "One sentence summary of draft quality",
+    "critiques": [
+        {{
+            "pillar_title": "The pillar/section with the problem",
+            "weakness": "What exactly is wrong",
+            "deep_dive_questions": [
+                "Specific search query 1 to fix this",
+                "Specific search query 2"
+            ],
+            "severity": "minor|moderate|critical"
+        }}
+    ]
+}}
+
+If the draft is excellent and has no major issues, return an empty critiques array."""
+
+
+EDITOR_PROMPT = """You are an experienced intelligence analyst tasked with REFINING a strategic memo.
+
+[ORIGINAL DRAFT]
+{draft_report}
+
+[CRITIQUES IDENTIFIED]
+{critique_summary}
+
+[NEW EVIDENCE FROM DEEP DIVES]
+{new_evidence}
+
+YOUR TASK:
+1. Take the original draft and INTEGRATE the new evidence into the weak sections.
+2. Do NOT rewrite the entire report. Keep the good parts intact.
+3. Where new evidence is added, make it seamless—don't say "According to new sources" or break the narrative flow.
+4. If the new evidence contradicts the draft, update the analysis accordingly.
+5. Preserve the original structure (Executive Summary, Pillars, Tables, etc.)
+
+OUTPUT the complete refined memo (not just the changes)."""
+

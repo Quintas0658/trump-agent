@@ -72,6 +72,14 @@ class ReActLoop:
                 max_tokens=max_tokens,
             )
             
+            # Print thoughts if available
+            if self.verbose and response.thoughts:
+                print("\n" + "-"*30)
+                print("[Agent Intelligence - THINKING]")
+                print("-"*30)
+                print(response.thoughts)
+                print("-"*30 + "\n")
+            
             # Check if response contains a function call
             if response.function_call:
                 fc = response.function_call

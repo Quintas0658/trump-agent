@@ -23,6 +23,7 @@ class LLMResponse:
     content: str
     model: str
     usage: Optional[dict] = None
+    thoughts: Optional[str] = None  # The actual thinking process text
     thoughts_token_count: Optional[int] = None  # Track thinking tokens
     function_call: Optional[object] = None  # For ReAct function calling
 
@@ -48,48 +49,77 @@ class GeminiClient:
     def generate(
         self, 
         prompt: str, 
-        temperature: float = 0.7,
+        temperature: float = 0.5, 
         max_tokens: int = 4096,
-        model: Optional[str] = None,
-        thinking_budget: Optional[int] = None,
-        **kwargs
+        model: str = None,
+        thinking_budget: int = None,
     ) -> LLMResponse:
-        """Generate a response from Vertex AI with optional Thinking mode."""
-        
-        active_model = model or self.model_name
+        """Simple text generation."""
+        # SMART SWITCH: If thinking is requested, use the thinking model unless a specific model was provided
+        if thinking_budget is not None and model is None:
+            active_model = self.thinking_model
+        else:
+            active_model = model or self.model_name
         
         # Build config with optional thinking
         config_kwargs = {}
         if thinking_budget is not None:
-            config_kwargs["thinking_config"] = ThinkingConfig(thinking_budget=thinking_budget)
+            config_kwargs["thinking_config"] = ThinkingConfig(
+                include_thoughts=True,
+                thinking_budget=thinking_budget
+            )
         
-        try:
-            response = self.client.models.generate_content(
-                model=active_model,
-                contents=prompt,
-                config=GenerateContentConfig(
-                    temperature=temperature,
-                    max_output_tokens=max_tokens,
-                    **config_kwargs
-                ) if config_kwargs else None,
-            )
-            
-            # Extract thinking token count if available
-            thoughts_tokens = None
-            if hasattr(response, 'usage_metadata') and hasattr(response.usage_metadata, 'thoughts_token_count'):
-                thoughts_tokens = response.usage_metadata.thoughts_token_count
-            
-            return LLMResponse(
-                content=response.text,
-                model=active_model,
-                usage={
-                    "prompt_tokens": response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') else None,
-                    "completion_tokens": response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') else None,
-                },
-                thoughts_token_count=thoughts_tokens
-            )
-        except Exception as e:
-            raise RuntimeError(f"Vertex AI error: {e}") from e
+        # Retry loop for network errors and rate limits
+        last_error = None
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                response = self.client.models.generate_content(
+                    model=active_model,
+                    contents=prompt,
+                    config=GenerateContentConfig(
+                        temperature=temperature,
+                        max_output_tokens=max_tokens,
+                        **config_kwargs
+                    ) if config_kwargs else None,
+                )
+                
+                # Extract thinking token count and text if available
+                thoughts_tokens = None
+                thoughts_text = ""
+                if hasattr(response, 'usage_metadata') and hasattr(response.usage_metadata, 'thoughts_token_count'):
+                    thoughts_tokens = response.usage_metadata.thoughts_token_count
+                
+                if response.candidates and response.candidates[0].content.parts:
+                    for part in response.candidates[0].content.parts:
+                        if hasattr(part, 'thought') and part.thought:
+                            thoughts_text += part.text
+                
+                return LLMResponse(
+                    content=response.text,
+                    model=active_model,
+                    usage={
+                        "prompt_tokens": response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') else None,
+                        "completion_tokens": response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') else None,
+                    },
+                    thoughts=thoughts_text if thoughts_text else None,
+                    thoughts_token_count=thoughts_tokens
+                )
+            except Exception as e:
+                last_error = e
+                error_msg = str(e).lower()
+                
+                # Check if this is a retriable error (network or rate limit)
+                if any(x in error_msg for x in ["disconnected", "connection", "timeout", "resource_exhausted", "429"]):
+                    if attempt < MAX_RETRIES:
+                        delay = RETRY_DELAYS[attempt]
+                        print(f"[!] API error (attempt {attempt + 1}/{MAX_RETRIES + 1}), retrying in {delay}s...")
+                        time.sleep(delay)
+                        continue
+                
+                # Non-retriable error or max retries reached
+                break
+        
+        raise RuntimeError(f"Vertex AI error after {MAX_RETRIES + 1} attempts: {last_error}") from last_error
     
     def generate_with_tools(
         self,
@@ -155,7 +185,11 @@ class GeminiClient:
         # Build config with tools inside
         config_kwargs = {"temperature": temperature, "max_output_tokens": max_tokens}
         if thinking_budget is not None:
-            config_kwargs["thinking_config"] = ThinkingConfig(thinking_budget=thinking_budget)
+            # For Gemini 3 / 2.0 Pro: pass thinking_budget
+            config_kwargs["thinking_config"] = ThinkingConfig(
+                include_thoughts=True, 
+                thinking_budget=thinking_budget
+            )
         if tools:
             config_kwargs["tools"] = [tools]
         
@@ -169,19 +203,28 @@ class GeminiClient:
                     config=GenerateContentConfig(**config_kwargs),
                 )
                 
-                # Check for function call in response
+                # Extract thinking and text
+                thoughts_tokens = None
+                thoughts_text = ""
                 function_call = None
                 content_text = ""
                 
                 if response.candidates and response.candidates[0].content.parts:
-                    for part in response.candidates[0].content.parts:
+                    for i, part in enumerate(response.candidates[0].content.parts):
+                        # DEBUG: Print part attributes to see where thoughts are hidden
+                        # print(f"[DEBUG] Part {i} attrs: {dir(part)}")
+                        
                         if hasattr(part, 'function_call') and part.function_call:
                             function_call = part.function_call
+                        elif hasattr(part, 'thought') and part.thought:
+                            # In some versions, .thought IS the text string
+                            if isinstance(part.thought, str):
+                                thoughts_text += part.thought
+                            else:
+                                thoughts_text += getattr(part, 'text', "")
                         elif hasattr(part, 'text') and part.text:
                             content_text += part.text
                 
-                # Extract thinking tokens
-                thoughts_tokens = None
                 if hasattr(response, 'usage_metadata') and hasattr(response.usage_metadata, 'thoughts_token_count'):
                     thoughts_tokens = response.usage_metadata.thoughts_token_count
                 
@@ -192,6 +235,7 @@ class GeminiClient:
                         "prompt_tokens": response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') else None,
                         "completion_tokens": response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') else None,
                     },
+                    thoughts=thoughts_text if thoughts_text else None,
                     thoughts_token_count=thoughts_tokens,
                     function_call=function_call,
                 )
@@ -200,11 +244,11 @@ class GeminiClient:
                 last_error = e
                 error_msg = str(e).lower()
                 
-                # Check if this is a retriable network error
-                if "disconnected" in error_msg or "connection" in error_msg or "timeout" in error_msg:
+                # Check if this is a retriable error (network or rate limit)
+                if any(x in error_msg for x in ["disconnected", "connection", "timeout", "resource_exhausted", "429"]):
                     if attempt < MAX_RETRIES:
                         delay = RETRY_DELAYS[attempt]
-                        print(f"[!] Network error (attempt {attempt + 1}/{MAX_RETRIES + 1}), retrying in {delay}s...")
+                        print(f"[!] API error (attempt {attempt + 1}/{MAX_RETRIES + 1}), retrying in {delay}s...")
                         time.sleep(delay)
                         continue
                 

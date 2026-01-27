@@ -527,6 +527,28 @@ async def gather_context(posts: list, client, search_tool) -> tuple:
                 # Step 3: Format results for final analysis
                 investigation_context = format_investigation_context(results)
                 print(f"[Deep Dig] Investigation complete: {len(investigation_context)} chars of findings")
+                
+                # --- NEW: PHANTOM PHASE (Deep Research Recursive Layer) ---
+                print("\n============================================================")
+                print("PHASE 2.5: SHADOW INVESTIGATION (Recursive Entity Hunting)")
+                print("============================================================")
+                
+                from src.agent.investigator import ShadowInvestigator
+                from src.agent.openai_client import OpenAIClient
+                
+                # Initialize Shadow Investigator (using GPT-4o for entity extraction)
+                # Note: We use the existing SearchTool instance
+                openai_client = OpenAIClient()
+                shadow_agent = ShadowInvestigator(openai_client, search_tool)
+                
+                # Run recursive investigation on the findings so far
+                shadow_findings = shadow_agent.investigate(investigation_context)
+                
+                # Append to context
+                if shadow_findings:
+                    investigation_context += "\n\n" + shadow_findings
+                    print(f"[*] Context enriched with Shadow Findings. New size: {len(investigation_context)} chars")
+                # -----------------------------------------------------------
         except Exception as e:
             print(f"[!] Multi-agent deep digging failed: {e}")
             investigation_context = ""

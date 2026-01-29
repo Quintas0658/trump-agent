@@ -164,6 +164,241 @@ def get_all_world_facts_context(days: int = 14) -> str:
         return ""
 
 
+# ============================================================================
+# PREDICTION TRACKING HELPERS
+# ============================================================================
+
+def get_pending_predictions() -> str:
+    """Load pending predictions (= strategic questions we're tracking).
+    
+    Returns:
+        str: Formatted string of open questions for LLM context
+    """
+    from supabase import create_client
+    
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_ANON_KEY")
+    
+    if not supabase_url or not supabase_key:
+        return ""
+    
+    try:
+        client = create_client(supabase_url, supabase_key)
+        
+        response = client.table("predictions").select(
+            "id, question, prediction, confidence, category, made_at, resolve_by"
+        ).eq("status", "pending").order("resolve_by").execute()
+        
+        if not response.data:
+            return ""
+        
+        # Format for LLM context
+        lines = ["## 📋 正在追踪的战略问题 (Open Strategic Questions)"]
+        lines.append("以下是你之前做出的预测，尚未验证。请在今天的分析中更新进展。\n")
+        
+        for pred in response.data:
+            days_left = (datetime.strptime(pred["resolve_by"], "%Y-%m-%d").date() - datetime.now().date()).days
+            urgency = "🔴" if days_left <= 2 else "🟡" if days_left <= 7 else "🟢"
+            lines.append(f"- {urgency} **[{pred['category'].upper()}]** {pred['question']}")
+            lines.append(f"  - 你的预测: {pred['prediction']} (置信度 {pred['confidence']}%)")
+            lines.append(f"  - 预测日期: {pred['made_at']} | 验证截止: {pred['resolve_by']} ({days_left} 天后)")
+            lines.append("")
+        
+        print(f"[Predictions] Loaded {len(response.data)} pending predictions")
+        return "\n".join(lines)
+        
+    except Exception as e:
+        print(f"[!] Pending predictions fetch failed: {e}")
+        return ""
+
+
+def get_prediction_stats() -> str:
+    """Get historical prediction accuracy for LLM feedback.
+    
+    Returns:
+        str: Formatted stats string for LLM prompt
+    """
+    from supabase import create_client
+    
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_ANON_KEY")
+    
+    if not supabase_url or not supabase_key:
+        return ""
+    
+    try:
+        client = create_client(supabase_url, supabase_key)
+        
+        # Get overall stats
+        all_preds = client.table("predictions").select("status, category").execute()
+        
+        if not all_preds.data:
+            return ""
+        
+        total = len(all_preds.data)
+        correct = sum(1 for p in all_preds.data if p["status"] == "correct")
+        wrong = sum(1 for p in all_preds.data if p["status"] == "wrong")
+        resolved = correct + wrong
+        
+        if resolved == 0:
+            return ""
+        
+        accuracy = round(correct / resolved * 100, 1)
+        
+        # Category breakdown
+        categories = {}
+        for p in all_preds.data:
+            cat = p["category"]
+            if cat not in categories:
+                categories[cat] = {"correct": 0, "wrong": 0}
+            if p["status"] == "correct":
+                categories[cat]["correct"] += 1
+            elif p["status"] == "wrong":
+                categories[cat]["wrong"] += 1
+        
+        lines = ["\n## 📊 你的历史预测表现 (Your Prediction Track Record)"]
+        lines.append(f"- **总体准确率**: {accuracy}% ({correct}/{resolved} 已验证)")
+        
+        for cat, stats in sorted(categories.items(), key=lambda x: x[1]["correct"] + x[1]["wrong"], reverse=True):
+            cat_total = stats["correct"] + stats["wrong"]
+            if cat_total > 0:
+                cat_acc = round(stats["correct"] / cat_total * 100, 1)
+                indicator = "✓" if cat_acc >= 60 else "⚠️"
+                lines.append(f"- {indicator} **{cat.upper()}**: {cat_acc}% ({stats['correct']}/{cat_total})")
+        
+        lines.append("\n请根据以上反馈调整你的分析策略。对于你表现较差的领域，请更加谨慎。\n")
+        
+        print(f"[Predictions] Historical accuracy: {accuracy}% ({correct}/{resolved})")
+        return "\n".join(lines)
+        
+    except Exception as e:
+        print(f"[!] Prediction stats fetch failed: {e}")
+        return ""
+
+
+def extract_predictions_from_report(report_text: str, report_id: str = None) -> list:
+    """Extract structured predictions from the analysis report using LLM.
+    
+    Args:
+        report_text: The generated report text
+        report_id: Optional report ID for linking
+        
+    Returns:
+        list: List of prediction dicts
+    """
+    from google import genai
+    import json
+    
+    extraction_prompt = f"""从以下分析报告中提取所有可验证的预测。
+
+要求：
+1. 只提取有明确时间框架的预测（如"48小时内"、"本周"、"30天内"）
+2. 每个预测必须是可验证的（能判断对错）
+3. 排除模糊表述（如"可能会"、"或许"）
+4. 将时间框架转换为天数
+
+输出纯 JSON 数组，不要其他内容：
+[
+  {{
+    "question": "会发生什么事？（问句形式）",
+    "prediction": "具体预测内容",
+    "confidence": 70,
+    "category": "military|trade|personnel|market|policy|other",
+    "region": "MENA|ASIA|DOMESTIC|GLOBAL",
+    "resolve_by_days": 7,
+    "reasoning": "预测依据（简短）"
+  }}
+]
+
+如果没有可提取的预测，返回空数组 []
+
+报告内容：
+{report_text[:8000]}
+"""
+    
+    try:
+        client = genai.Client()
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=extraction_prompt,
+        )
+        
+        # Parse JSON from response
+        text = response.text.strip()
+        # Remove markdown code blocks if present
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1]
+        if text.endswith("```"):
+            text = text.rsplit("\n", 1)[0]
+        if text.startswith("json"):
+            text = text[4:].strip()
+            
+        predictions = json.loads(text)
+        
+        if not predictions:
+            print("[Predictions] No extractable predictions found in report")
+            return []
+        
+        print(f"[Predictions] Extracted {len(predictions)} predictions from report")
+        return predictions
+        
+    except Exception as e:
+        print(f"[!] Prediction extraction failed: {e}")
+        return []
+
+
+def save_predictions(predictions: list, report_id: str = None) -> int:
+    """Save extracted predictions to database.
+    
+    Args:
+        predictions: List of prediction dicts from extract_predictions_from_report
+        report_id: Optional report ID for linking
+        
+    Returns:
+        int: Number of predictions saved
+    """
+    from supabase import create_client
+    
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_ANON_KEY")
+    
+    if not supabase_url or not supabase_key or not predictions:
+        return 0
+    
+    try:
+        client = create_client(supabase_url, supabase_key)
+        today = datetime.now().date()
+        saved = 0
+        
+        for pred in predictions:
+            resolve_days = pred.get("resolve_by_days", 7)
+            resolve_date = today + timedelta(days=resolve_days)
+            
+            record = {
+                "question": pred.get("question", ""),
+                "prediction": pred.get("prediction", ""),
+                "confidence": pred.get("confidence", 50),
+                "reasoning": pred.get("reasoning", ""),
+                "category": pred.get("category", "other"),
+                "region": pred.get("region"),
+                "made_at": today.isoformat(),
+                "resolve_by": resolve_date.isoformat(),
+                "report_id": report_id,
+                "status": "pending"
+            }
+            
+            client.table("predictions").insert(record).execute()
+            saved += 1
+            print(f"  [+] Saved: {pred.get('question', '')[:50]}...")
+        
+        print(f"[Predictions] Saved {saved} new predictions to database")
+        return saved
+        
+    except Exception as e:
+        print(f"[!] Prediction save failed: {e}")
+        return 0
+
+
 def generate_hotspot_queries(hotspots: dict) -> list:
     """Generate specific search queries based on active hotspot events.
     
@@ -620,6 +855,16 @@ async def gather_context(posts: list, client, search_tool) -> tuple:
     
     # 5. Build context string
     context_lines = []
+    
+    # Add Pending Predictions (= Strategic Questions we're tracking)
+    pending_predictions = get_pending_predictions()
+    if pending_predictions:
+        context_lines.append(pending_predictions)
+    
+    # Add Historical Prediction Stats (feedback loop)
+    prediction_stats = get_prediction_stats()
+    if prediction_stats:
+        context_lines.append(prediction_stats)
     
     # Add ALL World Facts first (comprehensive context from database)
     world_facts_context = get_all_world_facts_context(days=14)
@@ -1109,8 +1354,25 @@ async def main():
         )
         print(f"[*] Report saved to Supabase: {report_id} (Memory Compressed)")
         
+        # ====================================================================
+        # PREDICTION TRACKING: Extract and save predictions from report
+        # ====================================================================
+        print("\n" + "=" * 60)
+        print("PREDICTION TRACKING")
+        print("=" * 60)
+        
+        try:
+            predictions = extract_predictions_from_report(result, report_id)
+            if predictions:
+                saved_count = save_predictions(predictions, report_id)
+                print(f"[Predictions] {saved_count} new predictions will be tracked")
+            else:
+                print("[Predictions] No new predictions extracted from report")
+        except Exception as pred_err:
+            print(f"[!] Prediction extraction error: {pred_err}")
+        
         # 9. Send Email Briefing
-        print("[*] Sending email briefing...")
+        print("\n[*] Sending email briefing...")
         send_daily_report(result, summary=summary_text)
         
         # Save locally

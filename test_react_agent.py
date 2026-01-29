@@ -21,9 +21,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.'))
 
 from src.agent.llm_client import get_gemini_client
 from src.input.truth_social import TruthSocialScraper, MockTruthSocialScraper, TruthPost
+from src.tools.search import SearchTool
+from src.memory.post_store import PostStore
+from src.agent.tool_executor import create_tool_executor
 from src.agent.gatekeeper import run_gatekeeper_loop
 from src.agent.judgments import JudgmentEngine
-from src.agent.knowledge_accumulation import extract_and_store_facts
 from src.tools.email_sender import send_daily_report
 from src.agent.react_loop import run_react_analysis
 
@@ -53,6 +55,7 @@ load_dotenv()
 
 def get_active_hotspots(days: int = 7) -> dict:
     """Query world_facts for recent HIGH/CRITICAL events, grouped by region.
+    Used for generating targeted search queries.
     
     Returns:
         dict: {region: [event_summaries]} for active hotspots
@@ -70,6 +73,7 @@ def get_active_hotspots(days: int = 7) -> dict:
         client = create_client(supabase_url, supabase_key)
         cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
         
+        # Only HIGH/CRITICAL for search query generation
         response = client.table("world_facts").select(
             "region, event_summary, significance, event_date"
         ).gte("event_date", cutoff).in_(
@@ -94,6 +98,70 @@ def get_active_hotspots(days: int = 7) -> dict:
     except Exception as e:
         print(f"[!] Hotspot lookup failed: {e}")
         return {}
+
+
+def get_all_world_facts_context(days: int = 14) -> str:
+    """Fetch ALL world_facts as context for main AI.
+    Only passes essential fields: event_date + event_summary to save tokens.
+    
+    Returns:
+        str: Formatted context string with all facts grouped by region
+    """
+    from supabase import create_client
+    
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_ANON_KEY")
+    
+    if not supabase_url or not supabase_key:
+        return ""
+    
+    try:
+        client = create_client(supabase_url, supabase_key)
+        cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+        
+        # Fetch ALL facts, only essential fields: event_date, event_summary, region
+        response = client.table("world_facts").select(
+            "event_date, event_summary, region"
+        ).gte("event_date", cutoff).order("event_date", desc=True).execute()
+        
+        if not response.data:
+            return ""
+        
+        # Group by region
+        facts_by_region = {}
+        for row in response.data:
+            region = row.get("region", "GLOBAL")
+            # Handle list-type regions
+            if isinstance(region, list):
+                region = region[0] if region else "GLOBAL"
+            if region not in facts_by_region:
+                facts_by_region[region] = []
+            # Minimal format: [date] fact
+            facts_by_region[region].append(f"[{row['event_date']}] {row['event_summary']}")
+        
+        # Build formatted context
+        context_parts = []
+        for region in ["MENA", "ASIA", "DOMESTIC", "GLOBAL", "EUROPE", "LATAM"]:
+            if region in facts_by_region:
+                context_parts.append(f"### {region} ({len(facts_by_region[region])} events)")
+                context_parts.extend(facts_by_region[region])
+                context_parts.append("")  # blank line separator
+        
+        # Add any other regions
+        for region, facts in facts_by_region.items():
+            if region not in ["MENA", "ASIA", "DOMESTIC", "GLOBAL", "EUROPE", "LATAM"]:
+                context_parts.append(f"### {region} ({len(facts)} events)")
+                context_parts.extend(facts)
+                context_parts.append("")
+        
+        total_facts = sum(len(f) for f in facts_by_region.values())
+        print(f"[WorldFacts] Loaded {total_facts} facts from {len(facts_by_region)} regions")
+        
+        return "\n".join(context_parts)
+        
+    except Exception as e:
+        print(f"[!] World facts fetch failed: {e}")
+        return ""
 
 
 def generate_hotspot_queries(hotspots: dict) -> list:
@@ -494,11 +562,16 @@ async def gather_context(posts: list, client, search_tool) -> tuple:
        - That silence is often the real story. Search for that topic's latest developments.
     
     5. TIMELINE CORRELATION:
-       - If Trump makes a triumphant announcement (e.g. "hostages freed"), search for the TIMING.
-       - "Middle East crisis timeline January 2026" - is he announcing this to distract from something else?
+       - If Trump makes a triumphant announcement (e.g. "hostages freed" or "prisoners released"), search for the TIMING and the PRICE.
+       - "Venezuela releasing prisoners what did US give in return" | "Middle East crisis timeline January 2026"
+       - Is he announcing this to distract from something else?
+    
+    6. GEOPOLITICAL REPOSITIONING:
+       - Watch for any mention of Iran, Venezuela, China, or Russia.
+       - If a post mentions a "deal" or "good conversation" with a leader, search for the underlying deal components.
     
     === OUTPUT ===
-    Return ONLY a Python list of 8-10 strings. No markdown. Append {datetime.now().year} to ensure freshness.
+    Return ONLY a Python list of 10-12 strings. No markdown. Append {datetime.now().year} to ensure freshness.
     
     Example output:
     ["Alex Pretti nurse Minneapolis background profession", "gold price spike January 27 2026", "South Korea government official response US tariffs", "Tim Walz statement federal intervention Minneapolis", "USS Abraham Lincoln Persian Gulf timeline January", "Korean won exchange rate today", "private prison stocks GEO CoreCivic today", "what Politico is reporting that Trump ignores"]
@@ -548,7 +621,13 @@ async def gather_context(posts: list, client, search_tool) -> tuple:
     # 5. Build context string
     context_lines = []
     
-    # Add Hotspot Context first (Agent Memory)
+    # Add ALL World Facts first (comprehensive context from database)
+    world_facts_context = get_all_world_facts_context(days=14)
+    if world_facts_context:
+        context_lines.append("## WORLD FACTS (Last 14 Days - All Regions)")
+        context_lines.append(world_facts_context)
+    
+    # Add Hotspot Context (high-priority events for emphasis)
     if hotspot_context:
         context_lines.append(hotspot_context)
     
@@ -561,13 +640,68 @@ async def gather_context(posts: list, client, search_tool) -> tuple:
         for item in res.results:
             context_lines.append(f"- [{res.query}] {item.title}: {item.content[:250]}...")
             
-    unique_context = "\n".join(list(set(context_lines)))
+    # Ordered deduplication to preserve priority
+    seen = set()
+    unique_context_lines = []
+    for line in context_lines:
+        if line not in seen:
+            unique_context_lines.append(line)
+            seen.add(line)
     
-    # Compress context to prevent Vertex AI timeout (recommended: 8k chars)
-    MAX_CONTEXT_CHARS = 8000
-    if len(unique_context) > MAX_CONTEXT_CHARS:
-        print(f"[*] Compressing context from {len(unique_context)} to {MAX_CONTEXT_CHARS} chars")
-        unique_context = unique_context[:MAX_CONTEXT_CHARS] + "\n[...truncated for token efficiency...]"
+    unique_context = "\n".join(unique_context_lines)
+    
+    # ==========================================================================
+    # CONTEXT COMPRESSION (Industry Best Practice: Use cheap model for preprocessing)
+    # - Gemini Flash for compression (cheap, fast)
+    # - Maximize context to main thinking model
+    # - Preserve signals from ALL regions (no hard truncation)
+    # ==========================================================================
+    MAX_RAW_CHARS = 50000  # Allow more raw input
+    MAX_COMPRESSED_CHARS = 25000  # More context to main AI
+    
+    if len(unique_context) > MAX_RAW_CHARS:
+        print(f"[*] Context very long ({len(unique_context)} chars), using Gemini Flash to compress...")
+        
+        # Use Gemini Flash (cheaper, faster) for compression
+        compression_prompt = f"""You are a senior intelligence analyst. Extract ALL critical signals from this raw intelligence.
+
+MANDATORY PRESERVATION RULES:
+1. ALL military/naval movements and deployments
+2. ALL tariff/trade announcements with specific numbers
+3. ALL personnel changes (firings, appointments, resignations)
+4. ALL market data (stock tickers, prices, commodities, forex rates)
+5. At least 3 key points from EACH geographic region mentioned in the source
+
+COMPRESSION OUTPUT FORMAT:
+- Use bullet points
+- Include dates, names, numbers
+- No interpretation, just facts
+- Maximum 20000 characters
+
+RAW INTELLIGENCE ({len(unique_context)} chars):
+{unique_context[:MAX_RAW_CHARS]}
+
+COMPRESSED INTELLIGENCE:"""
+        
+        try:
+            from google import genai
+            flash_client = genai.Client()
+            flash_response = flash_client.models.generate_content(
+                model="gemini-2.0-flash",  # Cheap, fast model
+                contents=compression_prompt,
+            )
+            compressed = flash_response.text
+            if len(compressed) > 1000:  # Sanity check
+                unique_context = compressed
+                print(f"[*] Flash compressed context to {len(unique_context)} chars (preserved all regions)")
+            else:
+                print(f"[*] Flash compression too short, keeping original")
+        except Exception as e:
+            print(f"[!] Flash compression error: {e}, keeping original (no truncation)")
+    
+    # Final length check - but NO hard truncation, just warn
+    if len(unique_context) > MAX_COMPRESSED_CHARS:
+        print(f"[!] Warning: Context still large ({len(unique_context)} chars) - proceeding anyway")
     
     print(f"[*] Gathered {len(unique_context)} chars of initial context.")
     
@@ -897,7 +1031,7 @@ async def main():
         print("[*] Tool Executor created with 3 tools")
         
         # 3. Fetch Posts
-        posts = await fetch_recent_posts(store=post_store, hours=48)
+        posts = await fetch_recent_posts(store=post_store, hours=24)
         
         if not posts:
             print("[!] No posts found.")
@@ -950,7 +1084,7 @@ async def main():
             
             result = run_gatekeeper_loop(
                 draft_report=result,
-                original_context=initial_context[:8000],
+                original_context=initial_context[:12000],
                 search_function=deep_dive_search,
                 client=client
             )

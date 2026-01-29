@@ -211,6 +211,7 @@ CRITIQUE RULES:
 2. **Shallow Analysis**: Is any pillar just rewriting the news instead of explaining the *why* and *who benefits*?
 3. **Ignored Context**: Is there something in the ORIGINAL CONTEXT that the draft failed to mention?
 4. **Logical Gaps**: Are there any claims that don't logically follow from the evidence?
+5. **Geographic Omissions**: Did the draft ignore significant signals in the context regarding key foreign actors (e.g., Iran, Venezuela, China)? If the context contains a geopolitical move that isn't analyzed, flag it as a missing pillar.
 
 For EACH significant weakness, generate 2-3 highly specific "Deep Dive Questions" that a junior analyst should research.
 

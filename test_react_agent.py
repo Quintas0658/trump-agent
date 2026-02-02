@@ -289,31 +289,47 @@ def extract_predictions_from_report(report_text: str, report_id: str = None) -> 
     from google import genai
     import json
     
-    extraction_prompt = f"""从以下分析报告中提取所有可验证的预测。
+    extraction_prompt = f"""你是一个战略情报分析师。从以下分析报告中提取所有重要的战略问题和预测。
 
-要求：
-1. 只提取有明确时间框架的预测（如"48小时内"、"本周"、"30天内"）
-2. 每个预测必须是可验证的（能判断对错）
-3. 排除模糊表述（如"可能会"、"或许"）
-4. 将时间框架转换为天数
+## 提取优先级（从高到低）
 
-输出纯 JSON 数组，不要其他内容：
+### Tier 1: 战略级问题（必须提取，即使时间模糊）
+- 军事冲突/战争风险（如美伊动武、军事打击）
+- 政权更迭/领导人变动
+- 重大地缘政治转变
+
+### Tier 2: 政策/人事预测
+- 高官任免（辞职、解职）
+- 重大政策变化（关税生效、条约签署）
+
+### Tier 3: 市场预测
+- 具体价格目标
+- 重大市场事件
+
+## 规则
+1. **战略问题优先**：如果报告暗示可能发生战争/重大冲突，必须提取为预测
+2. **推断时间框架**：如果原文没有明确时间，根据上下文推断合理时间窗口
+   - 军事动作：通常 30-60 天
+   - 人事变动：通常 7-14 天
+   - 市场目标：通常 3-7 天
+3. **用问句形式表述**：每个预测都是一个待回答的问题
+4. **给出置信度**：根据报告语气判断（"必然" -> 85%, "很可能" -> 70%, "可能" -> 50%）
+
+## 输出格式（纯 JSON）
 [
   {{
-    "question": "会发生什么事？（问句形式）",
-    "prediction": "具体预测内容",
-    "confidence": 70,
+    "question": "问句形式的战略问题",
+    "prediction": "你预测的答案",
+    "confidence": 60,
     "category": "military|trade|personnel|market|policy|other",
     "region": "MENA|ASIA|DOMESTIC|GLOBAL",
-    "resolve_by_days": 7,
-    "reasoning": "预测依据（简短）"
+    "resolve_by_days": 30,
+    "reasoning": "预测依据"
   }}
 ]
 
-如果没有可提取的预测，返回空数组 []
-
-报告内容：
-{report_text[:8000]}
+## 报告内容
+{report_text[:10000]}
 """
     
     try:

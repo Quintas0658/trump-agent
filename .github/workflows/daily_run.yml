@@ -1,14 +1,15 @@
-name: Daily Intelligence Cycle
+name: Daily Intelligence Brief
 
 on:
   schedule:
-    # Run every 6 hours: 01:00, 07:00, 13:00, 19:00 UTC = 09:00, 15:00, 21:00, 03:00 Beijing Time
-    - cron: '0 1,7,13,19 * * *'
+    # Run at 01:00 UTC = 09:00 Beijing Time (daily)
+    - cron: '0 1 * * *'
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
   daily-brief:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     
     steps:
       - name: Checkout repository
@@ -27,37 +28,33 @@ jobs:
         with:
           credentials_json: '${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}'
 
-      - name: Run Daily Intelligence Cycle
-        id: run_agent
+      - name: Run Daily Intelligence Agent
         env:
+          # Database
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          # Search APIs (支持多个 Tavily key 轮换)
+          TAVILY_API_KEYS: ${{ secrets.TAVILY_API_KEYS }}
+          # 备用：如果只配置了单个 key
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          # Social Media
           APIFY_API_KEY: ${{ secrets.APIFY_API_KEY }}
+          # LLM APIs  
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # Email
+          EMAIL_USER: ${{ secrets.EMAIL_USERNAME }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: |
-          python main.py --daily --output-file report.md
-          echo "report_generated=true" >> $GITHUB_OUTPUT
-
-      - name: Send Email Report
-        if: steps.run_agent.outputs.report_generated == 'true'
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          secure: true
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "🇺🇸 Daily Intelligence Brief - ${{ github.event.repository.name }}"
-          to: ${{ secrets.EMAIL_TO }}
-          from: Trump Policy Agent <${{ secrets.EMAIL_USERNAME }}>
-          html_body: file://report.md
-          convert_markdown: true
+          echo "Starting Daily Intelligence Agent at $(date)"
+          python test_react_agent.py
+          echo "Agent completed at $(date)"
 
       - name: Upload Report Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: daily-report-${{ github.run_number }}
-          path: report.md
+          path: react_analysis.md
           retention-days: 30

@@ -2,8 +2,8 @@ name: Daily Intelligence Brief
 
 on:
   schedule:
-    # Run at 01:00 UTC = 09:00 Beijing Time (daily)
-    - cron: '0 1 * * *'
+    # Run at 00:30 UTC = 08:30 Beijing Time (daily)
+    - cron: '30 0 * * *'
   workflow_dispatch:  # Allow manual trigger
 
 # Ensure workflow has proper permissions
